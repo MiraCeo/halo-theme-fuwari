@@ -24,7 +24,11 @@ const className = Astro.props.class;
     >
       <div class="flex flex-row items-center text-md text-(--primary)">
         <span class="icon-[tabler--smart-home] mb-1 mr-2 text-[1.75rem]"></span>
-        <span th:text="${site.title}">Fuwari</span>
+        <span
+          th:text="${theme.config.base.navbar != null and theme.config.base.navbar.enable_custom_title and not #strings.isEmpty(theme.config.base.navbar.custom_title) ? theme.config.base.navbar.custom_title : site.title}"
+        >
+          Fuwari
+        </span>
       </div>
     </a>
 

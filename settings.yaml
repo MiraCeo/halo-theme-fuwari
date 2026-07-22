@@ -28,6 +28,24 @@ spec:
               value: false
               help: "隐藏访问者的主题彩色选择器"
         - $formkit: group
+          name: navbar
+          label: 导航栏标题
+          value:
+            enable_custom_title: false
+            custom_title: ""
+          children:
+            - $formkit: switch
+              name: enable_custom_title
+              label: 启用自定义标题
+              value: false
+              help: "启用后，导航栏左上角将显示下方填写的自定义标题"
+            - $formkit: text
+              name: custom_title
+              label: 自定义标题
+              value: ""
+              placeholder: "请输入导航栏标题"
+              help: "未启用或内容为空时，将继续显示网站标题"
+        - $formkit: group
           name: banner
           label: Banner
           value:
