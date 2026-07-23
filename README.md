@@ -21,12 +21,25 @@
   </a>
 </p>
 
+## v2.1.2 更新
+
+相较于 v2.1.1，本版本包含以下更新：
+
+- 重做访客端主题色选择面板，使用饱和度/明度面板与色相滑块直接选择颜色，并实时显示当前 HEX 色值。
+- 增加 RGB 与 HEX 输入模式切换：RGB 模式可分别编辑 R、G、B 通道，HEX 模式支持 `#RGB`、`RGB`、`#RRGGBB` 和 `RRGGBB`。
+- 增加基于浏览器原生 [EyeDropper API](https://developer.mozilla.org/docs/Web/API/EyeDropper_API) 的屏幕吸管，并让取色器、RGB/HEX 输入和主题色状态保持同步。
+- 访客自定义颜色改为以 HEX 格式独立存储；重置按钮可清除访客选择并恢复后台配置的默认主题色。
+- 调整后台基础设置的排列顺序；自定义导航栏标题默认为空，未启用或未填写时显示网站标题。
+- 更新个人资料的默认昵称和简介，并更新主题封面与首页预览图。
+
+> 屏幕吸管需要在 HTTPS 环境中使用，并取决于浏览器对 EyeDropper API 的支持；不支持时仍可使用可视化取色器或 RGB/HEX 输入框。
+
 ## 本分支更新
 
 - 将 Halo 主题唯一标识改为 `theme-fuwari-miraceo`，可与原版 `theme-fuwari` 同时安装，更新本分支时不会覆盖原主题。
 - 独立主题设置、ConfigMap、静态资源路径和编辑器 UI 插件绑定，避免两个主题共享配置或错误加载资源。
-- 后台主题颜色支持 `#RGB`、`#RRGGBB` 和 `rgb(r, g, b)` 格式，并在首屏加载前转换主题色相。
-- 保留对旧版数字 `hue` 配置的兼容；颜色输入无效时会安全回退到旧配置或默认值。
+- 后台主题颜色支持 `#RGB`、`#RRGGBB` 和 `rgb(r, g, b)` 格式；访客显示设置提供可视化取色、RGB/HEX 输入切换和原生屏幕吸管。
+- 保留对旧版后台数字 `hue` 配置的兼容；颜色输入无效时会安全回退到旧配置或默认值。
 - 更新主题元数据、仓库链接和页脚链接，由 MiraCeo 继续维护。
 
 ## 预览
@@ -35,7 +48,7 @@
 
 ## 安装
 
-从当前仓库的 [Releases](https://github.com/MiraCeo/halo-theme-fuwari/releases) 下载主题压缩包，然后在 Halo Console 的主题管理页面上传安装。该分支会作为 `theme-fuwari-miraceo` 独立安装。
+从当前仓库的 [Releases](https://github.com/MiraCeo/halo-theme-fuwari/releases) 下载主题压缩包，然后在 Halo Console 的主题管理页面上传安装。该分支会作为 `theme-fuwari-miraceo` 独立安装，不会覆盖原版 `theme-fuwari`。升级后建议刷新浏览器缓存，以确保新的访客主题色面板资源生效。
 
 ## 插件支持
 

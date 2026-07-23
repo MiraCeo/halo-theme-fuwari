@@ -174,9 +174,10 @@ const themeSettingScript = `<script type="application/json" id="theme-config" th
           document.documentElement.classList.remove("dark");
         }
 
+        const storedColor = localStorage.getItem("fuwari-miraceo-theme-color");
         const hue = fixedHue
           ? configHue
-          : localStorage.getItem("hue") || configHue;
+          : parseThemeColorHue(storedColor, Number(configHue));
         document.documentElement.style.setProperty("--hue", hue);
         document.documentElement.style.setProperty(
           "--page-width",
@@ -223,9 +224,9 @@ const themeSettingScript = `<script type="application/json" id="theme-config" th
     MAIN_PANEL_OVERLAPS_BANNER_HEIGHT,
   } from "../constants/constants";
   import {
-    getHue,
+    applyThemeColor,
     getStoredTheme,
-    setHue,
+    getThemeColor,
     setTheme,
   } from "../utils/setting-utils";
 
@@ -348,7 +349,7 @@ const themeSettingScript = `<script type="application/json" id="theme-config" th
   function init() {
     syncHomeClass();
     setTheme(getStoredTheme());
-    setHue(getHue());
+    applyThemeColor(getThemeColor());
     initCustomScrollbar();
     showBanner();
     initLegacyAdmonitions();

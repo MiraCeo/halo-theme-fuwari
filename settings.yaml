@@ -8,6 +8,25 @@ spec:
       label: 基础设置
       formSchema:
         - $formkit: group
+          name: navbar
+          label: 导航栏标题
+          value:
+            enable_custom_title: false
+            custom_title: ""
+          children:
+            - $formkit: switch
+              name: enable_custom_title
+              label: 启用自定义标题
+              value: true
+              help: "启用后，导航栏左上角将显示下方填写的自定义标题"
+            - $formkit: text
+              name: custom_title
+              label: 自定义标题
+              value: ""
+              placeholder: "请输入导航栏标题"
+              help: "未启用或内容为空时，将显示网站标题"
+
+        - $formkit: group
           name: themeColor
           label: 主题颜色
           value:
@@ -25,24 +44,7 @@ spec:
               label: 固定主题颜色
               value: false
               help: "隐藏访问者的主题彩色选择器"
-        - $formkit: group
-          name: navbar
-          label: 导航栏标题
-          value:
-            enable_custom_title: false
-            custom_title: "fuwari-miraceo"
-          children:
-            - $formkit: switch
-              name: enable_custom_title
-              label: 启用自定义标题
-              value: true
-              help: "启用后，导航栏左上角将显示下方填写的自定义标题"
-            - $formkit: text
-              name: custom_title
-              label: 自定义标题
-              value: "fuwari-miraceo"
-              placeholder: "请输入导航栏标题"
-              help: "未启用或内容为空时，将继续显示网站标题"
+
         - $formkit: group
           name: banner
           label: Banner
@@ -94,12 +96,14 @@ spec:
                   name: url
                   label: 链接
                   value:
+
         - $formkit: menuRadio
           id: menu
           name: menu
           label: 菜单
           value: ""
           help: "选择菜单(仅支持一级菜单)"
+
     - group: style
       label: 样式
       formSchema:
@@ -235,12 +239,12 @@ spec:
         - $formkit: text
           name: name
           label: 昵称
-          value: Fuwari
+          value: Fuwari-MiraCeo
 
         - $formkit: text
           name: bio
           label: 简介
-          value: "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+          value: "一刻千金"
         - $formkit: url
           name: url
           label: 链接(点击跳转登录和后台可使用 /login )

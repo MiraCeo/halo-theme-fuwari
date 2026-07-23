@@ -7,6 +7,8 @@ import {
 import type { LIGHT_DARK_MODE } from "../types/config";
 
 let restoreTransitionFrame = 0;
+const DEFAULT_THEME_COLOR = "#8066F0";
+const THEME_COLOR_STORAGE_KEY = "fuwari-miraceo-theme-color";
 
 function withoutThemeTransition(applyTheme: () => void) {
   const root = document.documentElement;
@@ -28,37 +30,53 @@ function withoutThemeTransition(applyTheme: () => void) {
   });
 }
 
-export function parseThemeColorHue(
-  value: string | undefined,
-  fallback = 250,
-): number {
+function parseThemeColorChannels(value: string | undefined): number[] | null {
   if (!value) {
-    return fallback;
+    return null;
   }
 
   const hexMatch = value.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i);
-  let channels: number[];
   if (hexMatch) {
     const hex =
       hexMatch[1].length === 3
         ? [...hexMatch[1]].map((part) => part + part).join("")
         : hexMatch[1];
-    channels = [0, 2, 4].map((offset) =>
+    return [0, 2, 4].map((offset) =>
       Number.parseInt(hex.slice(offset, offset + 2), 16),
     );
-  } else {
-    const rgbMatch = value
-      .trim()
-      .match(/^rgb\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*\)$/i);
-    if (!rgbMatch) {
-      return fallback;
-    }
-    channels = rgbMatch.slice(1).map(Number);
-    if (channels.some((channel) => channel > 255)) {
-      return fallback;
-    }
   }
 
+  const rgbMatch = value
+    .trim()
+    .match(/^rgb\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*\)$/i);
+  if (!rgbMatch) {
+    return null;
+  }
+  const channels = rgbMatch.slice(1).map(Number);
+  return channels.some((channel) => channel > 255) ? null : channels;
+}
+
+export function normalizeThemeColor(
+  value: string | undefined,
+  fallback = DEFAULT_THEME_COLOR,
+): string {
+  const channels = parseThemeColorChannels(value);
+  if (!channels) {
+    return fallback;
+  }
+  return `#${channels
+    .map((channel) => channel.toString(16).padStart(2, "0"))
+    .join("")}`.toUpperCase();
+}
+
+export function parseThemeColorHue(
+  value: string | undefined,
+  fallback = 250,
+): number {
+  const channels = parseThemeColorChannels(value);
+  if (!channels) {
+    return fallback;
+  }
   const [red, green, blue] = channels.map((channel) => channel / 255);
   const max = Math.max(red, green, blue);
   const min = Math.min(red, green, blue);
@@ -91,6 +109,43 @@ export function getDefaultHue(): number {
   );
 }
 
+function hueToHex(hue: number): string {
+  const normalizedHue = ((hue % 360) + 360) % 360;
+  const saturation = 0.575;
+  const value = 0.94;
+  const chroma = value * saturation;
+  const section = normalizedHue / 60;
+  const intermediate = chroma * (1 - Math.abs((section % 2) - 1));
+  const minimum = value - chroma;
+  const [red, green, blue] =
+    section < 1
+      ? [chroma, intermediate, 0]
+      : section < 2
+        ? [intermediate, chroma, 0]
+        : section < 3
+          ? [0, chroma, intermediate]
+          : section < 4
+            ? [0, intermediate, chroma]
+            : section < 5
+              ? [intermediate, 0, chroma]
+              : [chroma, 0, intermediate];
+
+  return normalizeThemeColor(
+    `rgb(${Math.round((red + minimum) * 255)}, ${Math.round(
+      (green + minimum) * 255,
+    )}, ${Math.round((blue + minimum) * 255)})`,
+  );
+}
+
+export function getDefaultThemeColor(): string {
+  const configCarrier = document.getElementById("config-carrier");
+  const configuredColor = configCarrier?.dataset.themeColor;
+  if (parseThemeColorChannels(configuredColor)) {
+    return normalizeThemeColor(configuredColor);
+  }
+  return hueToHex(getDefaultHue());
+}
+
 export function isHueFixed(): boolean {
   const configCarrier = document.getElementById("config-carrier");
   return (
@@ -99,24 +154,34 @@ export function isHueFixed(): boolean {
   );
 }
 
-export function getHue(): number {
+export function getThemeColor(): string {
   if (isHueFixed()) {
-    return getDefaultHue();
+    return getDefaultThemeColor();
   }
-  const stored = localStorage.getItem("hue");
-  return stored ? Number.parseInt(stored, 10) : getDefaultHue();
+  const stored = localStorage.getItem(THEME_COLOR_STORAGE_KEY) || undefined;
+  return normalizeThemeColor(stored, getDefaultThemeColor());
 }
 
-export function setHue(hue: number): void {
-  const nextHue = isHueFixed() ? getDefaultHue() : hue;
+export function applyThemeColor(color: string): void {
+  const hue = parseThemeColorHue(color, getDefaultHue());
+  document.documentElement.style.setProperty("--hue", String(hue));
+}
+
+export function setThemeColor(color: string): void {
+  const nextColor = isHueFixed()
+    ? getDefaultThemeColor()
+    : normalizeThemeColor(color, getDefaultThemeColor());
   if (!isHueFixed()) {
-    localStorage.setItem("hue", String(nextHue));
+    localStorage.setItem(THEME_COLOR_STORAGE_KEY, nextColor);
   }
-  const r = document.querySelector(":root") as HTMLElement;
-  if (!r) {
-    return;
-  }
-  r.style.setProperty("--hue", String(nextHue));
+  applyThemeColor(nextColor);
+}
+
+export function resetThemeColor(): string {
+  localStorage.removeItem(THEME_COLOR_STORAGE_KEY);
+  const defaultColor = getDefaultThemeColor();
+  applyThemeColor(defaultColor);
+  return defaultColor;
 }
 
 export function applyThemeToDocument(theme: LIGHT_DARK_MODE) {
