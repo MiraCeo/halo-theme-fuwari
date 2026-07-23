@@ -20,7 +20,7 @@ const iconsPlugin = /** @type {AstroVitePlugin} */ (
 );
 
 export default defineConfig({
-  base: "/themes/theme-fuwari",
+  base: "/themes/theme-fuwari-miraceo",
   build: {
     assets: "assets",
     format: "file",

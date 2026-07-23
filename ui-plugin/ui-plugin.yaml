@@ -1,7 +1,7 @@
 apiVersion: plugin.halo.run/v1alpha1
 kind: Plugin
 metadata:
-  name: "theme:theme-fuwari"
+  name: "theme:theme-fuwari-miraceo"
 spec:
   displayName: "Fuwari Theme UI"
   version: "2.1.0"

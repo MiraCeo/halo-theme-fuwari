@@ -35,7 +35,9 @@ export interface Base {
 }
 
 export interface ThemeColor {
-  hue: number;
+  color: string;
+  /** Kept for themes upgraded from versions that used a numeric hue. */
+  hue?: number;
   fixed: boolean;
 }
 

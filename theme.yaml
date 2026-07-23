@@ -1,21 +1,21 @@
 apiVersion: theme.halo.run/v1alpha1
 kind: Theme
 metadata:
-  name: theme-fuwari
+  name: theme-fuwari-miraceo
 spec:
-  displayName: theme-fuwari
+  displayName: theme-fuwari-miraceo
   author:
-    name: Jiewenhuang
-    website: https://www.jiewen.run
-  description: A modern theme for Halo.
-  logo: /themes/theme-fuwari/assets/images/favicon-light-192.png
-  homepage: https://github.com/jiewenhuang/halo-theme-fuwari#readme
-  repo: https://github.com/jiewenhuang/halo-theme-fuwari
-  issues: https://github.com/jiewenhuang/halo-theme-fuwari/issues
-  settingName: "theme-fuwari-setting"
-  configMapName: "theme-fuwari-configMap"
+    name: MiraCeo
+    website: https://github.com/MiraCeo
+  description: 基于 Jiewenhuang 的 Halo Theme Fuwari 修改，由 MiraCeo 维护。
+  logo: /themes/theme-fuwari-miraceo/assets/images/favicon-light-192.png
+  homepage: https://github.com/MiraCeo/halo-theme-fuwari#readme
+  repo: https://github.com/MiraCeo/halo-theme-fuwari
+  issues: https://github.com/MiraCeo/halo-theme-fuwari/issues
+  settingName: "theme-fuwari-miraceo-setting"
+  configMapName: "theme-fuwari-miraceo-configMap"
   version: "2.1.1"
   requires: ">=2.25.0"
   license:
     - name: "MIT"
-      url: "https://github.com/jiewenhuang/halo-theme-fuwari/blob/main/LICENSE"
+      url: "https://github.com/MiraCeo/halo-theme-fuwari/blob/main/LICENSE"

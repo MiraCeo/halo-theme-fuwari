@@ -28,10 +28,67 @@ function withoutThemeTransition(applyTheme: () => void) {
   });
 }
 
+export function parseThemeColorHue(
+  value: string | undefined,
+  fallback = 250,
+): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const hexMatch = value.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i);
+  let channels: number[];
+  if (hexMatch) {
+    const hex =
+      hexMatch[1].length === 3
+        ? [...hexMatch[1]].map((part) => part + part).join("")
+        : hexMatch[1];
+    channels = [0, 2, 4].map((offset) =>
+      Number.parseInt(hex.slice(offset, offset + 2), 16),
+    );
+  } else {
+    const rgbMatch = value
+      .trim()
+      .match(/^rgb\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*\)$/i);
+    if (!rgbMatch) {
+      return fallback;
+    }
+    channels = rgbMatch.slice(1).map(Number);
+    if (channels.some((channel) => channel > 255)) {
+      return fallback;
+    }
+  }
+
+  const [red, green, blue] = channels.map((channel) => channel / 255);
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  if (delta === 0) {
+    return fallback;
+  }
+
+  let hue: number;
+  if (max === red) {
+    hue = ((green - blue) / delta) % 6;
+  } else if (max === green) {
+    hue = (blue - red) / delta + 2;
+  } else {
+    hue = (red - green) / delta + 4;
+  }
+  return Math.round((hue * 60 + 360) % 360);
+}
+
 export function getDefaultHue(): number {
-  const fallback = "250";
+  const fallback = 250;
   const configCarrier = document.getElementById("config-carrier");
-  return Number.parseInt(configCarrier?.dataset.hue || fallback, 10);
+  const legacyHue = Number.parseInt(
+    configCarrier?.dataset.hue || String(fallback),
+    10,
+  );
+  return parseThemeColorHue(
+    configCarrier?.dataset.themeColor,
+    Number.isNaN(legacyHue) ? fallback : legacyHue,
+  );
 }
 
 export function isHueFixed(): boolean {

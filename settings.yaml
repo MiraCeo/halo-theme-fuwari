@@ -1,7 +1,7 @@
 apiVersion: v1alpha1
 kind: Setting
 metadata:
-  name: theme-fuwari-setting
+  name: theme-fuwari-miraceo-setting
 spec:
   forms:
     - group: base
@@ -11,20 +11,18 @@ spec:
           name: themeColor
           label: 主题颜色
           value:
-            hue: 250
+            color: "#E28247"
             fixed: false
           children:
-            - $formkit: number
-              name: hue
-              min: 0
-              max: 360
-              step: 5
-              label: 色调(Halo表单好像目前不支持 colorpicker)
-              value: 250
-              help: "主题颜色的默认色调，从0到360。红色：0，蓝绿色：200，青色：250，粉红色：345"
+            - $formkit: text
+              name: color
+              label: 主题颜色
+              value: "#E28247"
+              placeholder: "#E28247 或 rgb(226, 130, 71)"
+              help: "支持 HEX（#RGB、#RRGGBB）或 RGB（rgb(226, 130, 71)）格式"
             - $formkit: switch
               name: fixed
-              label: 固定色调
+              label: 固定主题颜色
               value: false
               help: "隐藏访问者的主题彩色选择器"
         - $formkit: group
@@ -32,17 +30,17 @@ spec:
           label: 导航栏标题
           value:
             enable_custom_title: false
-            custom_title: ""
+            custom_title: "fuwari-miraceo"
           children:
             - $formkit: switch
               name: enable_custom_title
               label: 启用自定义标题
-              value: false
+              value: true
               help: "启用后，导航栏左上角将显示下方填写的自定义标题"
             - $formkit: text
               name: custom_title
               label: 自定义标题
-              value: ""
+              value: "fuwari-miraceo"
               placeholder: "请输入导航栏标题"
               help: "未启用或内容为空时，将继续显示网站标题"
         - $formkit: group
@@ -50,7 +48,7 @@ spec:
           label: Banner
           value:
             enable: true
-            src: "/themes/theme-fuwari/assets/images/demo-banner.png"
+            src: "/themes/theme-fuwari-miraceo/assets/images/demo-banner.jpg"
             position: "center"
             credit:
               enable: false
@@ -65,7 +63,7 @@ spec:
             - $formkit: attachment
               name: src
               label: 图片
-              value: "/themes/theme-fuwari/assets/images/demo-banner.png"
+              value: "/themes/theme-fuwari-miraceo/assets/images/demo-banner.jpg"
               help: "显示的图像"
             - $formkit: select
               name: position
@@ -231,7 +229,7 @@ spec:
 
         - $formkit: attachment
           name: avatar
-          value: /themes/theme-fuwari/assets/images/demo-avatar.png
+          value: /themes/theme-fuwari-miraceo/assets/images/demo-avatar.jpg
           label: 头像
 
         - $formkit: text
