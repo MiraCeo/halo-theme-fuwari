@@ -5,9 +5,18 @@ interface Props {
   class?: string;
   alt?: string;
   position?: string;
+  loading?: "eager" | "lazy";
+  fetchpriority?: "high" | "low" | "auto";
 }
 
-const { id, src, alt = "", position = "center" } = Astro.props;
+const {
+  id,
+  src,
+  alt = "",
+  position = "center",
+  loading = "lazy",
+  fetchpriority = "auto",
+} = Astro.props;
 const className = Astro.props.class;
 const imageStyle = `object-position: ${position}`;
 ---
@@ -21,8 +30,10 @@ const imageStyle = `object-position: ${position}`;
     th:src={src}
     th:alt={alt}
     th:style={`|object-position: ${position}|`}
+    loading={loading}
+    fetchpriority={fetchpriority}
+    decoding="async"
     class="h-full w-full object-cover"
     style={imageStyle}
-    alt=""
   />
 </div>

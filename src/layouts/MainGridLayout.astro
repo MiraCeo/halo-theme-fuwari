@@ -61,6 +61,8 @@ const mainPanelTop = `calc(${BANNER_HEIGHT}vh - ${MAIN_PANEL_OVERLAPS_BANNER_HEI
       src="${theme.config.base.banner.src}"
       alt="${site.title}"
       position="${theme.config.base.banner.position}"
+      loading="eager"
+      fetchpriority="high"
       class="h-full object-cover opacity-0 scale-105 transition duration-700"
     />
   </div>
@@ -92,7 +94,7 @@ const mainPanelTop = `calc(${BANNER_HEIGHT}vh - ${MAIN_PANEL_OVERLAPS_BANNER_HEI
             class="text-xs text-white/75"
             th:text="${theme.config.base.banner.credit.text}"></span>
           <span
-            class="icon-[fa6-solid--arrow-up-right-from-square] absolute right-4 text-[0.75rem] text-[oklch(0.75_0.14_var(--hue))] opacity-0 transition group-hover:opacity-100"
+            class="icon-[fa6-solid--arrow-up-right-from-square] absolute right-4 text-[0.75rem] text-(--primary) opacity-0 transition group-hover:opacity-100"
           ></span>
         </a>
 

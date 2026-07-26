@@ -57,6 +57,13 @@ export interface Credit {
 export interface Style {
   color_scheme: string;
   enable_change_color_scheme: boolean;
+  typography?: Typography;
+}
+
+export interface Typography {
+  font_family: "system" | "roboto" | "serif" | "monospace" | "custom";
+  custom_font_family?: string;
+  custom_font_stylesheet?: string;
 }
 
 export interface Sidebar {

@@ -15,6 +15,7 @@
 
   body {
     background: var(--page-bg);
+    font-family: var(--font-family);
   }
 
   h1,
@@ -58,4 +59,19 @@
   pointer-events: none;
   transform: translateY(-50%);
   transition: all 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

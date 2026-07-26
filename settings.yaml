@@ -123,6 +123,43 @@ spec:
           name: enable_change_color_scheme
           label: 允许访客切换配色
           value: true
+
+        - $formkit: group
+          name: typography
+          label: 字体
+          value:
+            font_family: system
+            custom_font_family: ""
+            custom_font_stylesheet: ""
+          children:
+            - $formkit: select
+              name: font_family
+              label: 页面字体
+              value: system
+              options:
+                - label: 系统无衬线字体
+                  value: system
+                - label: Roboto
+                  value: roboto
+                - label: 系统衬线字体
+                  value: serif
+                - label: 系统等宽字体
+                  value: monospace
+                - label: 自定义字体
+                  value: custom
+            - $formkit: text
+              if: $value.font_family === custom
+              name: custom_font_family
+              label: 自定义字体名称
+              placeholder: '"Noto Sans SC", sans-serif'
+              help: "填写 CSS font-family 值；建议保留通用字体作为回退"
+            - $formkit: url
+              if: $value.font_family === custom
+              name: custom_font_stylesheet
+              label: 字体样式表地址
+              placeholder: "https://example.com/font.css"
+              help: "可选。填写提供 @font-face 的 HTTPS CSS 地址"
+
     - group: sidebar
       label: 侧边栏
       formSchema:

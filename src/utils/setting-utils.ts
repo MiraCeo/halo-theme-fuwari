@@ -163,7 +163,9 @@ export function getThemeColor(): string {
 }
 
 export function applyThemeColor(color: string): void {
-  const hue = parseThemeColorHue(color, getDefaultHue());
+  const normalizedColor = normalizeThemeColor(color, getDefaultThemeColor());
+  const hue = parseThemeColorHue(normalizedColor, getDefaultHue());
+  document.documentElement.style.setProperty("--theme-color", normalizedColor);
   document.documentElement.style.setProperty("--hue", String(hue));
 }
 

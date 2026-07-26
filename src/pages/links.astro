@@ -46,7 +46,6 @@ import MainGridLayout from "../layouts/MainGridLayout.astro";
             class="btn-card group min-h-28 items-start! justify-start! gap-4 rounded-xl p-4 text-left active:scale-95"
           >
             <img
-              alt=""
               th:if="${not #strings.isEmpty(link.spec.logo)}"
               th:src="${link.spec.logo}"
               th:alt="${link.spec.displayName}"

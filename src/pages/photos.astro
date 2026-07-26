@@ -150,7 +150,6 @@ import "../styles/photos-gallery-lightbox.css";
 
             <figure class="relative">
               <img
-                alt=""
                 th:src="${not #strings.isEmpty(photo.spec.cover) ? photo.spec.cover : photo.spec.url}"
                 th:alt="${photo.spec.displayName}"
                 loading="lazy"

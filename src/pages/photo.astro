@@ -119,7 +119,6 @@ import MainGridLayout from "../layouts/MainGridLayout.astro";
       >
         <img
           id="photo-detail-image"
-          alt=""
           th:src="${not #strings.isEmpty(photo.spec.cover) ? photo.spec.cover : photo.spec.url}"
           th:attr="data-pswp-src=${photo.spec.url},data-pswp-width=${photo.exif != null and photo.exif.imageWidth != null ? photo.exif.imageWidth : 0},data-pswp-height=${photo.exif != null and photo.exif.imageHeight != null ? photo.exif.imageHeight : 0}"
           th:alt="${photo.spec.displayName}"
@@ -145,7 +144,6 @@ import MainGridLayout from "../layouts/MainGridLayout.astro";
               class="icon-[material-symbols--chevron-left-rounded] text-2xl text-(--primary)"
             ></span>
             <img
-              alt=""
               th:src="${not #strings.isEmpty(prev.spec.cover) ? prev.spec.cover : prev.spec.url}"
               th:alt="${prev.spec.displayName}"
               loading="lazy"
@@ -192,7 +190,6 @@ import MainGridLayout from "../layouts/MainGridLayout.astro";
               </div>
             </div>
             <img
-              alt=""
               th:src="${not #strings.isEmpty(next.spec.cover) ? next.spec.cover : next.spec.url}"
               th:alt="${next.spec.displayName}"
               loading="lazy"
@@ -224,7 +221,6 @@ import MainGridLayout from "../layouts/MainGridLayout.astro";
               class="block h-18 w-24 shrink-0 overflow-hidden rounded-lg bg-(--btn-regular-bg)"
             >
               <img
-                alt=""
                 th:src="${not #strings.isEmpty(neighbor.spec.cover) ? neighbor.spec.cover : neighbor.spec.url}"
                 th:alt="${neighbor.spec.displayName}"
                 loading="lazy"

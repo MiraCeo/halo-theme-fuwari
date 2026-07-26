@@ -110,7 +110,14 @@
     setThemeColor(color);
   }
 
-  function applyRgbColor() {
+  function applyRgbColor(
+    channel: "red" | "green" | "blue",
+    event: Event,
+  ) {
+    const nextValue = Number((event.currentTarget as HTMLInputElement).value);
+    if (channel === "red") red = nextValue;
+    else if (channel === "green") green = nextValue;
+    else blue = nextValue;
     red = Math.round(clamp(Number(red), 0, 255));
     green = Math.round(clamp(Number(green), 0, 255));
     blue = Math.round(clamp(Number(blue), 0, 255));
@@ -199,7 +206,32 @@
     if (event.buttons === 1) updateSaturationValue(event);
   }
 
-  function updateHue() {
+  function handleSaturationValueKeydown(event: KeyboardEvent) {
+    const step = event.shiftKey ? 0.1 : 0.01;
+    let handled = true;
+    switch (event.key) {
+      case "ArrowLeft":
+        saturation = clamp(saturation - step);
+        break;
+      case "ArrowRight":
+        saturation = clamp(saturation + step);
+        break;
+      case "ArrowUp":
+        value = clamp(value + step);
+        break;
+      case "ArrowDown":
+        value = clamp(value - step);
+        break;
+      default:
+        handled = false;
+    }
+    if (!handled) return;
+    event.preventDefault();
+    applyPickerColor();
+  }
+
+  function updateHue(event: Event) {
+    hue = Number((event.currentTarget as HTMLInputElement).value);
     applyPickerColor();
   }
 
@@ -224,7 +256,7 @@
     >
       {t("theme.color", "主题色")}
       <button aria-label={t("theme.resetDefault", "Reset to Default")} class="btn-regular w-7 h-7 rounded-md  active:scale-90 will-change-transform"
-              class:opacity-0={color === defaultColor} class:pointer-events-none={color === defaultColor} on:click={resetColor}>
+              class:opacity-0={color === defaultColor} class:pointer-events-none={color === defaultColor} onclick={resetColor}>
         <div class="text-(--btn-content)">
           <div icon="fa6-solid:arrow-rotate-left" class="icon-[fa6-solid--arrow-rotate-left] text-[0.875rem]"></div>
         </div>
@@ -236,39 +268,57 @@
   </div>
   <div
     class="saturation-value-picker"
-    aria-label={t("theme.color", "主题色")}
-    on:pointerdown={startSaturationValueDrag}
-    on:pointermove={moveSaturationValueDrag}
+    role="slider"
+    tabindex="0"
+    aria-label={t("theme.saturationBrightness", "颜色饱和度与明度")}
+    aria-describedby="color-picker-help"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow={Math.round(saturation * 100)}
+    aria-valuetext={`${Math.round(saturation * 100)}% / ${Math.round(value * 100)}%`}
+    onpointerdown={startSaturationValueDrag}
+    onpointermove={moveSaturationValueDrag}
+    onkeydown={handleSaturationValueKeydown}
   >
     <span
       class="picker-cursor"
+      aria-hidden="true"
       style={`left: ${saturation * 100}%; top: ${(1 - value) * 100}%`}
     ></span>
   </div>
+  <span id="color-picker-help" class="sr-only">
+    {t(
+      "theme.saturationBrightnessHelp",
+      "使用方向键调整，按住 Shift 可大幅调整",
+    )}
+  </span>
   <div class="mt-3 flex items-center gap-3">
     <span class="color-preview" style={`background-color: ${color}`}></span>
     <input
       class="hue-slider"
-      aria-label="Hue"
+      aria-label={t("theme.hue", "色相")}
       type="range"
       min="0"
       max="359"
       step="1"
       bind:value={hue}
-      on:input={updateHue}
+      oninput={updateHue}
     />
   </div>
   <div class="mt-4 flex items-start gap-3">
     <button
       class="eyedropper-button btn-plain"
       class:opacity-60={eyedropperLoading}
-      aria-label="屏幕取色"
+      aria-label={t("theme.eyedropper", "从屏幕取色")}
       title={eyedropperSupported
-        ? "使用浏览器取色器"
-        : "当前浏览器不支持 EyeDropper API"}
+        ? t("theme.eyedropper", "从屏幕取色")
+        : t(
+            "theme.eyedropperUnavailable",
+            "当前浏览器不支持 EyeDropper API",
+          )}
       type="button"
       disabled={eyedropperLoading || !eyedropperSupported}
-      on:click={startEyeDropper}
+      onclick={startEyeDropper}
     >
       <span
         class="icon-[material-symbols--colorize-outline] text-[1.4rem]"
@@ -279,34 +329,34 @@
       <div class="grid min-w-0 flex-1 grid-cols-3 gap-2">
         <label class="rgb-field">
           <input
-            aria-label="Red"
+            aria-label={t("theme.red", "红色")}
             type="number"
             min="0"
             max="255"
             bind:value={red}
-            on:input={applyRgbColor}
+            oninput={(event) => applyRgbColor("red", event)}
           />
           <span>R</span>
         </label>
         <label class="rgb-field">
           <input
-            aria-label="Green"
+            aria-label={t("theme.green", "绿色")}
             type="number"
             min="0"
             max="255"
             bind:value={green}
-            on:input={applyRgbColor}
+            oninput={(event) => applyRgbColor("green", event)}
           />
           <span>G</span>
         </label>
         <label class="rgb-field">
           <input
-            aria-label="Blue"
+            aria-label={t("theme.blue", "蓝色")}
             type="number"
             min="0"
             max="255"
             bind:value={blue}
-            on:input={applyRgbColor}
+            oninput={(event) => applyRgbColor("blue", event)}
           />
           <span>B</span>
         </label>
@@ -315,25 +365,38 @@
       <label class="hex-field min-w-0 flex-1">
         <input
           class:invalid={hexInputInvalid}
-          aria-label="Hex RGB"
+          aria-label={t("theme.hexRgb", "十六进制 RGB")}
           aria-invalid={hexInputInvalid}
+          aria-describedby={hexInputInvalid ? "hex-color-error" : undefined}
           type="text"
           maxlength="7"
           placeholder="#E28247"
           bind:value={hexInput}
-          on:input={applyHexColor}
-          on:blur={restoreHexInput}
+          oninput={applyHexColor}
+          onblur={restoreHexInput}
         />
         <span>HEX</span>
+        {#if hexInputInvalid}
+          <span id="hex-color-error" class="sr-only" role="alert">
+            {t(
+              "theme.invalidHex",
+              "请输入有效的 3 位或 6 位十六进制颜色",
+            )}
+          </span>
+        {/if}
       </label>
     {/if}
     <button
       class="color-mode-button btn-plain"
-      aria-label={inputMode === "rgb" ? "切换到十六进制输入" : "切换到 RGB 输入"}
-      title={inputMode === "rgb" ? "切换到十六进制输入" : "切换到 RGB 输入"}
+      aria-label={inputMode === "rgb"
+        ? t("theme.switchToHex", "切换到十六进制输入")
+        : t("theme.switchToRgb", "切换到 RGB 输入")}
+      title={inputMode === "rgb"
+        ? t("theme.switchToHex", "切换到十六进制输入")
+        : t("theme.switchToRgb", "切换到 RGB 输入")}
       aria-pressed={inputMode === "hex"}
       type="button"
-      on:click={toggleInputMode}
+      onclick={toggleInputMode}
     >
       {inputMode === "rgb" ? "HEX" : "RGB"}
     </button>
@@ -352,6 +415,11 @@
       linear-gradient(to top, #000, transparent),
       linear-gradient(to right, #fff, hsl(var(--picker-hue) 100% 50%));
     box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+  }
+
+  .saturation-value-picker:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
   }
 
   .picker-cursor {

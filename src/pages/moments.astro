@@ -59,7 +59,6 @@ import MainGridLayout from "../layouts/MainGridLayout.astro";
         <div class="flex items-start gap-4">
           <div class="relative shrink-0">
             <img
-              alt=""
               th:if="${moment.owner != null and not #strings.isEmpty(moment.owner.avatar)}"
               th:src="${moment.owner.avatar}"
               th:alt="${moment.owner.displayName}"

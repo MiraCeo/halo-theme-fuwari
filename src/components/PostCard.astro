@@ -70,6 +70,8 @@ import PostMeta from "./PostMeta.astro";
     <img
       th:src="${post.spec.cover}"
       th:alt="${post.spec.title}"
+      loading="lazy"
+      decoding="async"
       class="h-full w-full object-cover"
     />
   </a>

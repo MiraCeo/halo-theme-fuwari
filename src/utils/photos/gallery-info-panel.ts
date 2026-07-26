@@ -195,7 +195,7 @@ export function renderPhotoGalleryInfo(
   if (tagTitle || description) {
     details.append(
       createInfoRow({
-        iconClass: "icon-[material-symbols--sell-outline-rounded]",
+        iconClass: "icon-[material-symbols--sell-outline]",
         title: tagTitle || t("page.photos.tags", "Tags"),
         subtitle: description,
       }),
