@@ -5,9 +5,15 @@ import {
   LIGHT_MODE,
 } from "../constants/constants.ts";
 import type { LIGHT_DARK_MODE } from "../types/config";
+import {
+  DEFAULT_HUE,
+  hueToHex,
+  normalizeThemeColor,
+  parseThemeColor,
+  parseThemeColorHue,
+} from "./theme-color.ts";
 
 let restoreTransitionFrame = 0;
-const DEFAULT_THEME_COLOR = "#8066F0";
 const THEME_COLOR_STORAGE_KEY = "fuwari-miraceo-theme-color";
 
 function withoutThemeTransition(applyTheme: () => void) {
@@ -30,117 +36,29 @@ function withoutThemeTransition(applyTheme: () => void) {
   });
 }
 
-function parseThemeColorChannels(value: string | undefined): number[] | null {
-  if (!value) {
-    return null;
-  }
+export { normalizeThemeColor, parseThemeColorHue };
 
-  const hexMatch = value.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i);
-  if (hexMatch) {
-    const hex =
-      hexMatch[1].length === 3
-        ? [...hexMatch[1]].map((part) => part + part).join("")
-        : hexMatch[1];
-    return [0, 2, 4].map((offset) =>
-      Number.parseInt(hex.slice(offset, offset + 2), 16),
-    );
-  }
-
-  const rgbMatch = value
-    .trim()
-    .match(/^rgb\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*\)$/i);
-  if (!rgbMatch) {
-    return null;
-  }
-  const channels = rgbMatch.slice(1).map(Number);
-  return channels.some((channel) => channel > 255) ? null : channels;
-}
-
-export function normalizeThemeColor(
-  value: string | undefined,
-  fallback = DEFAULT_THEME_COLOR,
-): string {
-  const channels = parseThemeColorChannels(value);
-  if (!channels) {
-    return fallback;
-  }
-  return `#${channels
-    .map((channel) => channel.toString(16).padStart(2, "0"))
-    .join("")}`.toUpperCase();
-}
-
-export function parseThemeColorHue(
-  value: string | undefined,
-  fallback = 250,
-): number {
-  const channels = parseThemeColorChannels(value);
-  if (!channels) {
-    return fallback;
-  }
-  const [red, green, blue] = channels.map((channel) => channel / 255);
-  const max = Math.max(red, green, blue);
-  const min = Math.min(red, green, blue);
-  const delta = max - min;
-  if (delta === 0) {
-    return fallback;
-  }
-
-  let hue: number;
-  if (max === red) {
-    hue = ((green - blue) / delta) % 6;
-  } else if (max === green) {
-    hue = (blue - red) / delta + 2;
-  } else {
-    hue = (red - green) / delta + 4;
-  }
-  return Math.round((hue * 60 + 360) % 360);
+/** Fallback hue when only an unusable legacy hue value is configured. */
+function readLegacyHue(configCarrier: HTMLElement | null): number {
+  const parsed = Number.parseInt(
+    configCarrier?.dataset.hue || String(DEFAULT_HUE),
+    10,
+  );
+  return Number.isNaN(parsed) ? DEFAULT_HUE : parsed;
 }
 
 export function getDefaultHue(): number {
-  const fallback = 250;
   const configCarrier = document.getElementById("config-carrier");
-  const legacyHue = Number.parseInt(
-    configCarrier?.dataset.hue || String(fallback),
-    10,
-  );
   return parseThemeColorHue(
     configCarrier?.dataset.themeColor,
-    Number.isNaN(legacyHue) ? fallback : legacyHue,
-  );
-}
-
-function hueToHex(hue: number): string {
-  const normalizedHue = ((hue % 360) + 360) % 360;
-  const saturation = 0.575;
-  const value = 0.94;
-  const chroma = value * saturation;
-  const section = normalizedHue / 60;
-  const intermediate = chroma * (1 - Math.abs((section % 2) - 1));
-  const minimum = value - chroma;
-  const [red, green, blue] =
-    section < 1
-      ? [chroma, intermediate, 0]
-      : section < 2
-        ? [intermediate, chroma, 0]
-        : section < 3
-          ? [0, chroma, intermediate]
-          : section < 4
-            ? [0, intermediate, chroma]
-            : section < 5
-              ? [intermediate, 0, chroma]
-              : [chroma, 0, intermediate];
-
-  return normalizeThemeColor(
-    `rgb(${Math.round((red + minimum) * 255)}, ${Math.round(
-      (green + minimum) * 255,
-    )}, ${Math.round((blue + minimum) * 255)})`,
+    readLegacyHue(configCarrier),
   );
 }
 
 export function getDefaultThemeColor(): string {
   const configCarrier = document.getElementById("config-carrier");
   const configuredColor = configCarrier?.dataset.themeColor;
-  if (parseThemeColorChannels(configuredColor)) {
+  if (parseThemeColor(configuredColor)) {
     return normalizeThemeColor(configuredColor);
   }
   return hueToHex(getDefaultHue());

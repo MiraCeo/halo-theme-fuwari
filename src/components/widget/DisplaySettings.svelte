@@ -5,9 +5,19 @@
     resetThemeColor,
     setThemeColor,
   } from "../../utils/setting-utils";
+  import {
+    clamp,
+    hexToHsv,
+    hexToRgb,
+    hsvToHex,
+    normalizeThemeColor,
+    rgbToHex,
+  } from "../../utils/theme-color";
 
-  let color = getThemeColor();
-  const defaultColor = getDefaultThemeColor();
+  // Always store the picker colour in normalised uppercase form: the reset
+  // button compares it against the configured default, which is normalised too.
+  let color = normalizeThemeColor(getThemeColor());
+  const defaultColor = normalizeThemeColor(getDefaultThemeColor());
   let { hue, saturation, value } = hexToHsv(color);
   let { red, green, blue } = hexToRgb(color);
   let inputMode: "rgb" | "hex" = "rgb";
@@ -22,78 +32,6 @@
       open: () => Promise<{ sRGBHex: string }>;
     };
   };
-
-  function clamp(value: number, min = 0, max = 1): number {
-    return Math.min(max, Math.max(min, value));
-  }
-
-  function hexToHsv(hex: string) {
-    const red = Number.parseInt(hex.slice(1, 3), 16) / 255;
-    const green = Number.parseInt(hex.slice(3, 5), 16) / 255;
-    const blue = Number.parseInt(hex.slice(5, 7), 16) / 255;
-    const max = Math.max(red, green, blue);
-    const min = Math.min(red, green, blue);
-    const delta = max - min;
-    let nextHue = 0;
-
-    if (delta) {
-      if (max === red) nextHue = ((green - blue) / delta) % 6;
-      else if (max === green) nextHue = (blue - red) / delta + 2;
-      else nextHue = (red - green) / delta + 4;
-      nextHue = (nextHue * 60 + 360) % 360;
-    }
-
-    return {
-      hue: Math.round(nextHue),
-      saturation: max === 0 ? 0 : delta / max,
-      value: max,
-    };
-  }
-
-  function hexToRgb(hex: string) {
-    return {
-      red: Number.parseInt(hex.slice(1, 3), 16),
-      green: Number.parseInt(hex.slice(3, 5), 16),
-      blue: Number.parseInt(hex.slice(5, 7), 16),
-    };
-  }
-
-  function rgbToHex(nextRed: number, nextGreen: number, nextBlue: number) {
-    return `#${[nextRed, nextGreen, nextBlue]
-      .map((channel) =>
-        Math.round(clamp(Number(channel), 0, 255))
-          .toString(16)
-          .padStart(2, "0"),
-      )
-      .join("")}`.toUpperCase();
-  }
-
-  function hsvToHex(nextHue: number, nextSaturation: number, nextValue: number) {
-    const chroma = nextValue * nextSaturation;
-    const section = nextHue / 60;
-    const intermediate = chroma * (1 - Math.abs((section % 2) - 1));
-    const minimum = nextValue - chroma;
-    const [red, green, blue] =
-      section < 1
-        ? [chroma, intermediate, 0]
-        : section < 2
-          ? [intermediate, chroma, 0]
-          : section < 3
-            ? [0, chroma, intermediate]
-            : section < 4
-              ? [0, intermediate, chroma]
-              : section < 5
-                ? [intermediate, 0, chroma]
-                : [chroma, 0, intermediate];
-
-    return `#${[red, green, blue]
-      .map((channel) =>
-        Math.round((channel + minimum) * 255)
-          .toString(16)
-          .padStart(2, "0"),
-      )
-      .join("")}`.toUpperCase();
-  }
 
   const t = (key: string, fallback: string): string => {
     const value = typeof window !== "undefined"

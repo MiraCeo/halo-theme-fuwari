@@ -132,91 +132,34 @@ const themeSettingScript = `<script type="application/json" id="theme-config" th
       }}
     >
       (() => {
-        const parseThemeColor = (value) => {
-          if (!value) return null;
-          const hexMatch = value.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i);
-          let channels;
-          if (hexMatch) {
-            const hex =
-              hexMatch[1].length === 3
-                ? [...hexMatch[1]].map((part) => part + part).join("")
-                : hexMatch[1];
-            channels = [0, 2, 4].map((offset) =>
-              Number.parseInt(hex.slice(offset, offset + 2), 16),
-            );
-          } else {
-            const rgbMatch = value
-              .trim()
-              .match(
-                /^rgb\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*\)$/i,
-              );
-            if (!rgbMatch) return null;
-            channels = rgbMatch.slice(1).map(Number);
-            if (channels.some((channel) => channel > 255)) return null;
-          }
+        // Colour maths lives in `src/utils/theme-color.ts` and is published on
+        // `window.__fuwariThemeColor` by the bundled script below. Looking the
+        // helpers up at call time keeps this pre-paint pass in sync with the
+        // picker without shipping a second copy of the conversions.
+        const themeColor = () => window.__fuwariThemeColor;
+        const parseThemeColor = (value) => themeColor()?.parseThemeColor(value);
+        const parseThemeColorHue = (value, fallback) =>
+          themeColor()?.parseThemeColorHue(value, fallback) ?? fallback;
+        const hueToHex = (hue) => themeColor()?.hueToHex(hue) ?? "";
 
-          const hex = channels
-            .map((channel) => channel.toString(16).padStart(2, "0"))
-            .join("")
-            .toUpperCase();
-          return { channels, hex: `#${hex}` };
-        };
-        const parseThemeColorHue = (color, fallback = 250) => {
-          if (!color) return fallback;
-          const { channels } = color;
-          const [red, green, blue] = channels.map((channel) => channel / 255);
-          const max = Math.max(red, green, blue);
-          const min = Math.min(red, green, blue);
-          const delta = max - min;
-          if (delta === 0) return fallback;
-
-          let hue;
-          if (max === red) hue = ((green - blue) / delta) % 6;
-          else if (max === green) hue = (blue - red) / delta + 2;
-          else hue = (red - green) / delta + 4;
-          return Math.round((hue * 60 + 360) % 360);
-        };
-        const legacyHue = Number.parseInt(
+        const fallbackHue = Number.parseInt(
           document.documentElement.dataset.hue || "250",
           10,
         );
-        const fallbackHue = Number.isNaN(legacyHue) ? 250 : legacyHue;
-        const hueToHex = (hue) => {
-          const normalizedHue = ((hue % 360) + 360) % 360;
-          const chroma = 0.94 * 0.575;
-          const section = normalizedHue / 60;
-          const intermediate = chroma * (1 - Math.abs((section % 2) - 1));
-          const minimum = 0.94 - chroma;
-          const rgb =
-            section < 1
-              ? [chroma, intermediate, 0]
-              : section < 2
-                ? [intermediate, chroma, 0]
-                : section < 3
-                  ? [0, chroma, intermediate]
-                  : section < 4
-                    ? [0, intermediate, chroma]
-                    : section < 5
-                      ? [intermediate, 0, chroma]
-                      : [chroma, 0, intermediate];
-          return `#${rgb
-            .map((channel) =>
-              Math.round((channel + minimum) * 255)
-                .toString(16)
-                .padStart(2, "0"),
-            )
-            .join("")
-            .toUpperCase()}`;
-        };
-        const configuredColor =
-          parseThemeColor(document.documentElement.dataset.themeColor) ||
-          parseThemeColor(hueToHex(fallbackHue));
+        const configuredColor = parseThemeColor(
+          document.documentElement.dataset.themeColor,
+        );
+        const activeColor =
+          configuredColor ??
+          parseThemeColor(
+            hueToHex(Number.isNaN(fallbackHue) ? 250 : fallbackHue),
+          );
         const fixedColor = document.documentElement.dataset.hueFixed === "true";
         const storedColor = parseThemeColor(
           localStorage.getItem("fuwari-miraceo-theme-color"),
         );
-        const activeColor =
-          !fixedColor && storedColor ? storedColor : configuredColor;
+        const resolvedColor =
+          !fixedColor && storedColor ? storedColor : activeColor;
         const storedTheme = localStorage.getItem("theme") || DEFAULT_THEME;
         const preferredDark = window.matchMedia(
           "(prefers-color-scheme: dark)",
@@ -231,13 +174,15 @@ const themeSettingScript = `<script type="application/json" id="theme-config" th
           document.documentElement.classList.remove("dark");
         }
 
+        if (!resolvedColor) return;
+
         document.documentElement.style.setProperty(
           "--theme-color",
-          activeColor.hex,
+          resolvedColor.hex,
         );
         document.documentElement.style.setProperty(
           "--hue",
-          String(parseThemeColorHue(activeColor, fallbackHue)),
+          String(parseThemeColorHue(resolvedColor.hex, fallbackHue)),
         );
         const fontPresets = {
           system:
@@ -308,6 +253,32 @@ const themeSettingScript = `<script type="application/json" id="theme-config" th
     getThemeColor,
     setTheme,
   } from "../utils/setting-utils";
+  import {
+    hexToHsv,
+    hexToRgb,
+    hsvToHex,
+    hueToHex,
+    normalizeThemeColor,
+    parseThemeColor,
+    parseThemeColorHue,
+    rgbToHex,
+  } from "../utils/theme-color";
+
+  // Publish the shared colour maths before the first paint so the inline
+  // `<head>` script can resolve the visitor's colour without duplicating the
+  // conversions. Keep this list in sync with `src/global.d.ts`.
+  if (!window.__fuwariThemeColor) {
+    window.__fuwariThemeColor = {
+      parseThemeColor,
+      parseThemeColorHue,
+      normalizeThemeColor,
+      hueToHex,
+      hexToHsv,
+      hexToRgb,
+      rgbToHex,
+      hsvToHex,
+    };
+  }
 
   const bannerEnabled = Boolean(document.getElementById("banner-wrapper"));
 

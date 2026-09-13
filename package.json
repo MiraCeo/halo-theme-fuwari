@@ -5,11 +5,13 @@
   },
   "scripts": {
     "dev": "nodemon --config nodemon.json --exec 'astro build'",
-    "build": "pnpm build:ui-plugin && astro build && pnpm package",
+    "build": "pnpm build:ui-plugin && astro build && pnpm validate && pnpm package",
     "build:pkg": "pnpm build",
     "build:ui-plugin": "pnpm --dir ui-plugin build",
     "build:only": "astro build",
+    "validate": "node scripts/validate-templates.mjs",
     "package": "theme-package",
+    "test": "node scripts/validate-templates.test.mjs && node --experimental-strip-types tests/theme-color.test.mts",
     "test:ui-plugin": "pnpm --dir ui-plugin test",
     "astro": "astro",
     "format": "prettier --write .",
@@ -74,7 +76,8 @@
     "nodemon": "^3.1.14",
     "prettier": "3.8.1",
     "prettier-plugin-astro": "0.14.1",
-    "unplugin-icons": "^23.0.1"
+    "unplugin-icons": "^23.0.1",
+    "yaml": "^2.9.0"
   },
   "lint-staged": {
     "*.{astro,css,js,mjs,cjs,ts,vue,svelte,json,yaml,yml,md}": "prettier --write --ignore-unknown"
