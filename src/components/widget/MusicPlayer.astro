@@ -75,7 +75,7 @@ const playerScript = buildMusicPlayerScript(widgetId);
         data-type=${theme.config.music.meting != null and not #strings.isEmpty(theme.config.music.meting.type) ? theme.config.music.meting.type : 'playlist'},
         data-id=${theme.config.music.meting != null ? theme.config.music.meting.id : ''},
         data-api=${metingOn ? theme.config.music.meting.api : ''},
-        data-custom=${customOn ? theme.config.music.custom_tracks.items : ''},
+        data-custom=${customOn ? theme.config.music.custom_tracks : ''},
         data-volume=${theme.config.music.volume == null ? 0.7 : theme.config.music.volume},
         data-play-mode=${#strings.isEmpty(theme.config.music.play_mode) ? 'list' : theme.config.music.play_mode},
         data-show-lyrics=${showLyrics ? 'true' : 'false'},
@@ -85,7 +85,7 @@ const playerScript = buildMusicPlayerScript(widgetId);
         type="text/plain"
         id={tracksId}
         th:if="${customOn}"
-        th:utext="${theme.config.music.custom_tracks.items}"></script>
+        th:utext="${theme.config.music.custom_tracks}"></script>
       <div class="mb-2 flex items-center gap-2 px-1">
         <div class="group relative h-14 w-14 shrink-0">
           <div

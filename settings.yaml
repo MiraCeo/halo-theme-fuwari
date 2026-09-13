@@ -205,6 +205,11 @@ spec:
           value: 音乐
           help: "侧边栏播放器的标题"
 
+        # Flat slots rather than an `array` field on purpose: Halo always opens
+        # array items in an "编辑条目" dialog, which makes later edits awkward.
+        # Nested groups render inline in the submenu, like the Meting fields.
+        # Four slots is enough for the common case ("one or two tracks"); adding
+        # more is a matter of copying a block.
         - $formkit: group
           name: custom_tracks
           label: 自定义曲目列表（推荐）
@@ -215,11 +220,10 @@ spec:
               name: enable
               label: 启用
               value: false
-              help: "与 Meting API 同时启用时以此为准"
-            - $formkit: array
-              name: items
-              label: 曲目
-              addLabel: 添加曲目
+              help: "与 Meting API 同时启用时以此为准；音频留空的曲目会被忽略"
+            - $formkit: group
+              name: slot1
+              label: 曲目 1
               children:
                 - $formkit: attachment
                   name: audio
@@ -237,6 +241,57 @@ spec:
                   label: 歌词
                   rows: 4
                   help: "一行一句，可选。行首带 [分:秒.百分秒] 时歌词跟随播放高亮"
+            - $formkit: group
+              name: slot2
+              label: 曲目 2
+              children:
+                - $formkit: attachment
+                  name: audio
+                  label: 音频
+                - $formkit: text
+                  name: name
+                  label: 标题
+                - $formkit: attachment
+                  name: cover
+                  label: 封面
+                - $formkit: textarea
+                  name: lyrics
+                  label: 歌词
+                  rows: 4
+            - $formkit: group
+              name: slot3
+              label: 曲目 3
+              children:
+                - $formkit: attachment
+                  name: audio
+                  label: 音频
+                - $formkit: text
+                  name: name
+                  label: 标题
+                - $formkit: attachment
+                  name: cover
+                  label: 封面
+                - $formkit: textarea
+                  name: lyrics
+                  label: 歌词
+                  rows: 4
+            - $formkit: group
+              name: slot4
+              label: 曲目 4
+              children:
+                - $formkit: attachment
+                  name: audio
+                  label: 音频
+                - $formkit: text
+                  name: name
+                  label: 标题
+                - $formkit: attachment
+                  name: cover
+                  label: 封面
+                - $formkit: textarea
+                  name: lyrics
+                  label: 歌词
+                  rows: 4
 
         - $formkit: group
           name: meting

@@ -233,6 +233,66 @@ check("parseCustomTracks: accepts the settings group shape", () => {
   ]);
 });
 
+// The settings use one group per track slot rather than an `array` field,
+// because Halo always edits array items in a dialog. Nested groups come through
+// as flat underscore-joined keys.
+check("parseCustomTracks: reads the flat slot keys", () => {
+  const tracks = parseCustomTracks({
+    enable: true,
+    slot1_audio: "/upload/a.mp3",
+    slot1_name: "第一首",
+    slot1_cover: "/upload/a.jpg",
+    slot2_audio: "/upload/b.mp3",
+    slot2_lyrics: "[00:01.00]hi",
+  });
+  assert.deepEqual(tracks, [
+    {
+      name: "第一首",
+      artist: "",
+      url: "/upload/a.mp3",
+      pic: "/upload/a.jpg",
+      lrc: "",
+    },
+    {
+      name: "b",
+      artist: "",
+      url: "/upload/b.mp3",
+      pic: "",
+      lrc: "[00:01.00]hi",
+    },
+  ]);
+});
+
+check("parseCustomTracks: empty slots are skipped, order is by slot", () => {
+  const tracks = parseCustomTracks({
+    slot1_audio: "",
+    slot2_audio: "/upload/two.mp3",
+    slot10_audio: "/upload/ten.mp3",
+    slot3_audio: "/upload/three.mp3",
+  });
+  // Slot 10 must not sort as though it were slot 1.
+  assert.deepEqual(
+    tracks.map((track) => track.url),
+    ["/upload/two.mp3", "/upload/three.mp3", "/upload/ten.mp3"],
+  );
+});
+
+check("parseCustomTracks: flat slots survive the string form too", () => {
+  // SpEL stringifies nested groups as flat keys, so this is the realistic path.
+  const tracks = parseCustomTracks(
+    "{enable=true, slot1_audio=/upload/a.mp3?token=x, slot1_name=一刻千金, slot2_audio=/upload/b.mp3}",
+  );
+  assert.deepEqual(
+    tracks.map((track) => track.name),
+    ["一刻千金", "b"],
+  );
+  assert.equal(tracks[0].url, "/upload/a.mp3?token=x");
+});
+
+check("parseCustomTracks: an enable-only group yields nothing", () => {
+  assert.deepEqual(parseCustomTracks({ enable: true }), []);
+});
+
 check("parseCustomTracks: accepts a real array of objects", () => {
   const tracks = parseCustomTracks([
     { audio: "/upload/a.mp3", name: "A" },
@@ -861,8 +921,8 @@ check("template markup: the player is gated by the feature switches", () => {
     "the Meting URL must not be sent when Meting is switched off",
   );
   assert.ok(
-    markup.includes('th:utext="${theme.config.music.custom_tracks.items}"'),
-    "the track list is injected verbatim for the tolerant parser",
+    markup.includes('th:utext="${theme.config.music.custom_tracks}"'),
+    "the track group is injected verbatim for the tolerant parser",
   );
   // Not application/json: the server may emit a Java toString() dump, which is
   // not valid JSON, and nothing parses it as JSON.

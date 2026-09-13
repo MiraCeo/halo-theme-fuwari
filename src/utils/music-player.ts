@@ -228,12 +228,44 @@ function toTrack(entry: Record<string, unknown>): MusicTrack {
 }
 
 /**
+ * Collect tracks from the flat `slot1_audio` / `slot2_name` shape the settings
+ * produce.
+ *
+ * The settings deliberately use one group per track slot rather than an `array`
+ * field, because Halo always edits array items in a dialog. Nested groups are
+ * emitted as flat, underscore-joined keys, so the slot number has to be read
+ * back out of each key and the fields regrouped per slot.
+ */
+function tracksFromFlatKeys(
+  source: Record<string, unknown>,
+): MusicTrack[] | null {
+  const bySlot = new Map<string, Record<string, unknown>>();
+  let matched = false;
+
+  for (const [key, value] of Object.entries(source)) {
+    const match = /^slot(\d+)_([A-Za-z]+)$/.exec(key);
+    if (!match) continue;
+    matched = true;
+    const slot = match[1].padStart(4, "0");
+    const fields = bySlot.get(slot) ?? {};
+    fields[match[2]] = value;
+    bySlot.set(slot, fields);
+  }
+
+  if (!matched) return null;
+  return [...bySlot.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, fields]) => toTrack(fields))
+    .filter((track) => track.url);
+}
+
+/**
  * Convert the custom-track setting into tracks, accepting every shape Halo
  * might hand the template.
  *
- * A string is tried as JSON first and falls back to the relaxed parser; an
- * actual array or object (some serialisers pass one through untouched) is read
- * directly. Entries without a URL are dropped, matching the Meting path.
+ * A string is tried as JSON first and falls back to the relaxed parser. An
+ * object is read for flat slot keys, then a nested `items` array, then as a
+ * single track. Entries without a URL are dropped, matching the Meting path.
  */
 export function parseCustomTracks(raw: unknown): MusicTrack[] {
   if (raw === null || raw === undefined || raw === "") return [];
@@ -250,11 +282,11 @@ export function parseCustomTracks(raw: unknown): MusicTrack[] {
 
   if (typeof raw === "object") {
     const value = raw as Record<string, unknown>;
-    // A group holding an `items` array is the settings shape; a bare object is
-    // a single track.
-    return parseCustomTracks(
-      Array.isArray(value.items) ? value.items : [value],
-    );
+    const flat = tracksFromFlatKeys(value);
+    if (flat) return flat;
+    // Older shape: a group holding an `items` array.
+    if (Array.isArray(value.items)) return parseCustomTracks(value.items);
+    return parseCustomTracks([value]);
   }
 
   if (typeof raw !== "string") return [];
@@ -274,6 +306,9 @@ export function parseCustomTracks(raw: unknown): MusicTrack[] {
 
   const body = stripWrapper(text);
   if (!body) return [];
+  const pairs = readPairs(body);
+  const flat = tracksFromFlatKeys(pairs);
+  if (flat) return flat;
   return splitTopLevel(body)
     .map((element) => toTrack(readPairs(stripWrapper(element))))
     .filter((track) => track.url);
@@ -547,6 +582,26 @@ export const MUSIC_PLAYER_SOURCE = `
       return pairs;
     };
 
+    // One group per track slot is emitted as flat slot1_audio / slot2_name keys,
+    // so the slot number has to be read back out and the fields regrouped.
+    const tracksFromFlatKeys = (source) => {
+      const bySlot = {};
+      let matched = false;
+      Object.keys(source).forEach((key) => {
+        const match = /^slot(\\d+)_([A-Za-z]+)$/.exec(key);
+        if (!match) return;
+        matched = true;
+        const slot = match[1];
+        bySlot[slot] = bySlot[slot] || {};
+        bySlot[slot][match[2]] = source[key];
+      });
+      if (!matched) return null;
+      return Object.keys(bySlot)
+        .sort((a, b) => Number(a) - Number(b))
+        .map((slot) => toTrack(bySlot[slot]))
+        .filter((track) => track.url);
+    };
+
     const parseCustomTracks = (raw) => {
       if (raw === null || raw === undefined || raw === "") return [];
       if (Array.isArray(raw)) {
@@ -556,9 +611,9 @@ export const MUSIC_PLAYER_SOURCE = `
           .filter((track) => track.url);
       }
       if (typeof raw === "object") {
-        return parseCustomTracks(
-          Array.isArray(raw.items) ? raw.items : [raw],
-        );
+        const flat = tracksFromFlatKeys(raw);
+        if (flat) return flat;
+        return parseCustomTracks(Array.isArray(raw.items) ? raw.items : [raw]);
       }
       if (typeof raw !== "string") return [];
       const text = raw.trim();
@@ -572,6 +627,8 @@ export const MUSIC_PLAYER_SOURCE = `
       if (parsed && typeof parsed === "object") return parseCustomTracks(parsed);
       const body = stripWrapper(text);
       if (!body) return [];
+      const flat = tracksFromFlatKeys(readPairs(body));
+      if (flat) return flat;
       return splitTopLevel(body)
         .map((element) => toTrack(readPairs(stripWrapper(element))))
         .filter((track) => track.url);
