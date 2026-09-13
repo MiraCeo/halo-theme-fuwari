@@ -88,8 +88,8 @@ The logic is split four ways so it is testable without a browser:
 - `src/components/widget/MusicPlayer.astro` - the player panel (`id="music-widget"`), markup only
 - `src/components/widget/PlaylistItem.astro` - the `<template>` row the script clones per track
 - `src/utils/music-player.ts` - `MUSIC_PLAYER_SOURCE` (the inline player) plus pure helpers
-  (`formatTime`, `parseLRC`, `normalizeLyrics`, `parseCustomTracks`, `isLyricsUrl`,
-  `buildMetingUrl`, `mapMetingTrack`)
+  (`formatTime`, `parseLRC`, `normalizeLyrics`, `parseCustomTracks`, `titleFromUrl`,
+  `isLyricsUrl`, `buildMetingUrl`, `mapMetingTrack`)
 - `src/utils/music-toggle.ts` - the top-bar play/pause button
 
 **One player, two views.** The sidebar panel is the single owner of the `<audio>` element; the
@@ -100,17 +100,29 @@ control. Both surfaces being needed is not redundancy: `Layout.astro` applies `n
 (`-translate-y-16 opacity-0`) once the page scrolls past ~234px with a banner enabled, so the
 top-bar button is gone for the whole of a long article.
 
-**Sources.** A player plays from one of two fields, and the custom list wins when both are set:
+**Sources.** A player plays from one of two fields, each behind its own `enable` switch, and the
+custom list wins when both are on:
 
-- `custom_tracks` (recommended) - a JSON array of `{name, artist, url, pic, lrc}`. Audio and covers
-  live in Halo attachments, so there is no third-party dependency. `lrc` accepts a string or an
-  array of per-line strings.
+- `custom_tracks` (recommended) - one nested `group` per track slot (`slot1..slot4`), each holding
+  `audio`, `name`, `cover` and `lyrics`. Audio and covers are Halo attachments, so there is no
+  third-party dependency. Fields after the audio picker are hidden until a file is chosen. A blank
+  title falls back to the audio filename (`titleFromUrl`); ID3 tags are not readable because an
+  attachment field hands over a URL, not a file.
 - `meting.api` - a Meting server URL. There is deliberately **no built-in default**: the previous
   default mirror died and broke every install that relied on it.
 
-**Custom tracks travel as JSON inside a `script[type=application/json]` element**, not in a data
-attribute: JSON is full of quotes and HTML-escaping it into an attribute is the fragile path.
-Thymeleaf injects it with `th:utext` and the player reads `textContent`.
+Slots are nested groups rather than an `array` field because Halo always opens array items in an
+"编辑条目" dialog, which made later edits awkward.
+
+Halo serialises those groups as a Java `Map.toString()` (`{slot1={audio=...}}`) or as JSON,
+depending on the build, so `parseCustomTracks` accepts nested slots, flat `slot1_audio` keys, an
+`items` array and plain JSON. A comma inside a filename is only treated as a field separator when
+the brace nesting is back at the top and a `key=` follows.
+
+**Custom tracks travel in a `script[type=text/plain]` element**, not a data attribute: JSON is full
+of quotes and HTML-escaping it into an attribute is the fragile path. Thymeleaf injects it with
+`th:utext` and the player reads `textContent`. The type is `text/plain`, not `application/json`,
+because the server may emit a Java `toString()` dump, which is not valid JSON.
 
 **Missing means enabled** for `show_toggle` and `show_sidebar`: a config saved before those keys
 existed has no value, and a wrong `false` hides a surface with no way to tell why.
@@ -209,3 +221,13 @@ widget is never re-rendered and must bind on first parse. Two constraints follow
   serving and left every fresh install showing a load failure. Public Meting mirrors are all
   unofficial and die regularly; the theme now ships no default and offers the custom track list
   instead.
+- **Halo merges a theme's saved config with the new schema rather than replacing it**, so removing
+  a field from `settings.yaml` leaves its old key behind in the ConfigMap. A live install was
+  observed carrying both `custom_tracks.items` (from an early `array` schema) and
+  `custom_tracks.slot1..4` (the current shape) simultaneously. `parseCustomTracks` reads the slot
+  keys first and ignores leftovers, but never assume the stored shape matches the current schema.
+- Theme upgrades on a live Halo do not always take effect: an install was found serving a build
+  whose templates predate the uploaded package while the front end still worked. When a fix
+  "doesn't work" after deploying, compare the emitted markup against the package before debugging
+  the code - look for a marker only the new build contains, such as a new `theme.config.*` path.
+  Asset filenames are content-hashed and matched across builds, so they do not identify a version.
