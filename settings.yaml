@@ -205,31 +205,61 @@ spec:
           value: 音乐
           help: "侧边栏播放器的标题"
 
-        - $formkit: code
+        - $formkit: group
           name: custom_tracks
           label: 自定义曲目列表（推荐）
-          language: json
-          help: |-
-            音频和封面先上传到 Halo 附件，再把附件地址填进来。与 Meting API 同时填写时以此为准。
-            格式为 JSON 数组，每条含 name、artist、url、pic、lrc，其中只有 url 必填。
-            lrc 为字符串数组，行首带 [分:秒.百分秒] 时歌词跟随播放高亮。
+          value:
+            enable: false
+          children:
+            - $formkit: switch
+              name: enable
+              label: 启用
+              value: false
+              help: "与 Meting API 同时启用时以此为准"
+            - $formkit: array
+              name: items
+              label: 曲目
+              addLabel: 添加曲目
+              children:
+                - $formkit: attachment
+                  name: audio
+                  label: 音频
+                  help: "留空标题时用文件名作为曲名"
+                - $formkit: text
+                  name: name
+                  label: 标题
+                  help: "留空则自动取音频文件名"
+                - $formkit: attachment
+                  name: cover
+                  label: 封面
+                - $formkit: textarea
+                  name: lyrics
+                  label: 歌词
+                  rows: 4
+                  help: "一行一句，可选。行首带 [分:秒.百分秒] 时歌词跟随播放高亮"
 
         - $formkit: group
           name: meting
           label: Meting API
           value:
+            enable: false
             server: netease
             type: playlist
           children:
+            - $formkit: switch
+              name: enable
+              label: 启用
+              value: false
             - $formkit: text
+              if: $value.enable === true
               name: api
               label: 接口地址
               placeholder: "https://你的域名/meting/?server=:server&type=:type&id=:id"
               help: |-
-                不使用 Meting 时留空。
                 Meting 是统一各音乐平台接口的开源项目，需自行部署成服务，公开镜像即他人部署的此类服务。
                 公开镜像随时可能失效，且播放内容属于未授权分发，风险自负。
             - $formkit: select
+              if: $value.enable === true
               name: server
               label: 平台
               value: netease
@@ -245,6 +275,7 @@ spec:
                 - label: 百度音乐
                   value: baidu
             - $formkit: select
+              if: $value.enable === true
               name: type
               label: 类型
               value: playlist
@@ -260,6 +291,7 @@ spec:
                 - label: 搜索
                   value: search
             - $formkit: text
+              if: $value.enable === true
               name: id
               label: ID
               help: 歌曲 / 歌单 / 专辑 / 歌手 ID，搜索类型时填写关键词

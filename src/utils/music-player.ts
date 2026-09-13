@@ -104,30 +104,178 @@ export function normalizeLyrics(
 }
 
 /**
- * Convert the `custom_tracks` JSON from the theme settings into tracks.
- * Throws on malformed JSON or a non-array payload; entries without a URL are
- * dropped, matching how Meting responses are filtered.
+ * Split a relaxed, brace-delimited list into one string per top-level element.
+ *
+ * The theme settings expose custom tracks as an `array` field, and the template
+ * only sees whatever the server stringifies it to. Depending on how Halo
+ * serialises it that may be JSON, JSON inside a string, or a Java `toString()`
+ * such as `[{name=Song, url=/upload/a.mp3}, {name=Other}]`. Splitting on
+ * top-level commas while tracking nesting and quotes handles all of them, so the
+ * caller does not have to know which shape arrived.
  */
-export function parseCustomTracks(
-  raw: string | undefined | null,
-): MusicTrack[] {
-  if (!raw || !raw.trim()) return [];
-  const parsed: unknown = JSON.parse(raw);
-  if (!Array.isArray(parsed)) {
-    throw new TypeError("custom tracks must be a JSON array");
+function splitTopLevel(body: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let current = "";
+
+  for (let index = 0; index < body.length; index += 1) {
+    const character = body[index];
+    const escaped = body[index - 1] === "\\";
+
+    if (quote) {
+      current += character;
+      if (character === quote && !escaped) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      current += character;
+      continue;
+    }
+    if (character === "{" || character === "[") depth += 1;
+    if (character === "}" || character === "]") depth -= 1;
+    if (character === "," && depth === 0) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += character;
   }
-  return parsed
-    .filter(
-      (item): item is Record<string, unknown> =>
-        typeof item === "object" && item !== null,
-    )
-    .map((item) => ({
-      name: String(item.name || item.title || "Unknown"),
-      artist: String(item.artist || item.author || ""),
-      url: String(item.url ?? ""),
-      pic: String(item.pic || item.cover || ""),
-      lrc: normalizeLyrics(item.lrc as string | string[] | undefined),
-    }))
+
+  if (current.trim()) parts.push(current);
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+/** Strip one layer of matching braces or brackets, plus surrounding quotes. */
+function stripWrapper(value: string): string {
+  let text = value.trim();
+  if (
+    (text.startsWith("{") && text.endsWith("}")) ||
+    (text.startsWith("[") && text.endsWith("]"))
+  ) {
+    text = text.slice(1, -1).trim();
+  }
+  if (
+    (text.startsWith('"') && text.endsWith('"')) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    text = text.slice(1, -1);
+  }
+  return text.trim();
+}
+
+/**
+ * Read `key=value` (or `key:"value"`) pairs out of one relaxed element.
+ *
+ * Values may legitimately contain `=`, `,`, `:` and brackets - URLs and LRC
+ * lines do - so a key is only recognised at the start of the element or right
+ * after a comma. Without that anchor a query string such as `?token=abc` reads
+ * as a field named `token` and truncates the URL.
+ */
+function readPairs(element: string): Record<string, string> {
+  const pairs: Record<string, string> = {};
+  const keyAt = /(?:^|,)\s*([A-Za-z_][\w-]*)\s*[:=]\s*/g;
+  const keys = [...element.matchAll(keyAt)];
+  if (keys.length === 0) return pairs;
+
+  keys.forEach((match, position) => {
+    const valueStart = (match.index ?? 0) + match[0].length;
+    const nextKey = keys[position + 1];
+    const value =
+      nextKey === undefined
+        ? element.slice(valueStart)
+        : element.slice(valueStart, nextKey.index).replace(/,\s*$/, "");
+    pairs[match[1]] = stripWrapper(value);
+  });
+
+  return pairs;
+}
+
+/**
+ * Derive a display title from an audio URL.
+ *
+ * The settings ask for a title but leave it optional, and there is no way to
+ * read ID3 tags from an attachment field (it hands over a URL, not a file), so
+ * the filename is the best available fallback.
+ */
+export function titleFromUrl(url: string): string {
+  if (!url) return "";
+  const withoutQuery = url.split("?")[0].split("#")[0];
+  const lastSegment = withoutQuery.split("/").pop() ?? "";
+  let name = lastSegment;
+  try {
+    name = decodeURIComponent(lastSegment);
+  } catch {
+    // A malformed escape sequence is not worth failing over.
+  }
+  return name.replace(/\.[^.]+$/, "").trim();
+}
+
+/** Normalise one already-structured entry into a track. */
+function toTrack(entry: Record<string, unknown>): MusicTrack {
+  const url = String(entry.audio ?? entry.url ?? entry.src ?? entry.file ?? "");
+  const name = String(entry.name ?? entry.title ?? "").trim();
+  return {
+    name: name || titleFromUrl(url),
+    artist: String(entry.artist ?? entry.author ?? ""),
+    url,
+    pic: String(entry.cover ?? entry.pic ?? ""),
+    lrc: normalizeLyrics(
+      (entry.lyrics ?? entry.lrc) as string | string[] | undefined,
+    ),
+  };
+}
+
+/**
+ * Convert the custom-track setting into tracks, accepting every shape Halo
+ * might hand the template.
+ *
+ * A string is tried as JSON first and falls back to the relaxed parser; an
+ * actual array or object (some serialisers pass one through untouched) is read
+ * directly. Entries without a URL are dropped, matching the Meting path.
+ */
+export function parseCustomTracks(raw: unknown): MusicTrack[] {
+  if (raw === null || raw === undefined || raw === "") return [];
+
+  if (Array.isArray(raw)) {
+    return raw
+      .filter(
+        (item): item is Record<string, unknown> =>
+          typeof item === "object" && item !== null,
+      )
+      .map(toTrack)
+      .filter((track) => track.url);
+  }
+
+  if (typeof raw === "object") {
+    const value = raw as Record<string, unknown>;
+    // A group holding an `items` array is the settings shape; a bare object is
+    // a single track.
+    return parseCustomTracks(
+      Array.isArray(value.items) ? value.items : [value],
+    );
+  }
+
+  if (typeof raw !== "string") return [];
+
+  const text = raw.trim();
+  if (!text || text === "[]" || text === "{}") return [];
+
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = null;
+  }
+  if (typeof parsed === "object" && parsed !== null) {
+    return parseCustomTracks(parsed);
+  }
+
+  const body = stripWrapper(text);
+  if (!body) return [];
+  return splitTopLevel(body)
+    .map((element) => toTrack(readPairs(stripWrapper(element))))
     .filter((track) => track.url);
 }
 
@@ -155,11 +303,13 @@ export function buildMetingUrl(config: MusicSourceConfig): string {
 
 /** Normalise one Meting response entry into a track, tolerating both schemas. */
 export function mapMetingTrack(item: Record<string, unknown>): MusicTrack {
+  const url = String(item.url ?? "");
+  const name = String(item.title ?? item.name ?? "").trim();
   return {
-    name: String(item.title || item.name || "Unknown"),
-    artist: String(item.author || item.artist || "Unknown"),
-    url: String(item.url ?? ""),
-    pic: String(item.pic || item.cover || ""),
+    name: name || titleFromUrl(url),
+    artist: String(item.author ?? item.artist ?? ""),
+    url,
+    pic: String(item.pic ?? item.cover ?? ""),
     lrc: normalizeLyrics(item.lrc as string | string[] | undefined),
   };
 }
@@ -176,14 +326,25 @@ export function mapMetingTrack(item: Record<string, unknown>): MusicTrack {
  * depending on any surrounding scope.
  */
 export function buildMusicPlayerScript(widgetId: string): string {
-  // A literal close tag inside the snippet would end the element early, and
-  // because the snippet lives in a template literal it would also silently
-  // truncate that literal at build time. Catch it here instead.
+  // Cheap invariants that are otherwise only discovered by a confusing parse
+  // error far from the real line: a literal close tag would end the element
+  // early, and the snippet lives in a template literal so either mistake
+  // truncates that literal at build time.
   const closeTag = "</scr" + "ipt";
   if (MUSIC_PLAYER_SOURCE.includes(closeTag)) {
     throw new Error(
       `MUSIC_PLAYER_SOURCE contains ${closeTag}, which would truncate the script block`,
     );
+  }
+  for (const [label, pattern] of [
+    ["a backtick", /`/],
+    ["an unescaped template placeholder", /(?<!\\)\$\{/],
+  ] as const) {
+    if (pattern.test(MUSIC_PLAYER_SOURCE)) {
+      throw new Error(
+        `MUSIC_PLAYER_SOURCE contains ${label}, which would truncate the template literal it lives in`,
+      );
+    }
   }
   return `(function (widgetId) {${MUSIC_PLAYER_SOURCE}\n})(${JSON.stringify(widgetId)});`;
 }
@@ -293,20 +454,126 @@ export const MUSIC_PLAYER_SOURCE = `
     const normalizeLyrics = (value) =>
       Array.isArray(value) ? value.map(String).join("\\n") : String(value || "");
 
-    const parseCustomTracks = (raw) => {
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        throw new TypeError("custom tracks must be a JSON array");
+    const titleFromUrl = (url) => {
+      if (!url) return "";
+      const withoutQuery = url.split("?")[0].split("#")[0];
+      const lastSegment = withoutQuery.split("/").pop() || "";
+      let name = lastSegment;
+      try {
+        name = decodeURIComponent(lastSegment);
+      } catch (error) {
+        // A malformed escape sequence is not worth failing over.
       }
-      return parsed
-        .filter((item) => item && typeof item === "object")
-        .map((item) => ({
-          name: String(item.name || item.title || "Unknown"),
-          artist: String(item.artist || item.author || ""),
-          url: String(item.url || ""),
-          pic: String(item.pic || item.cover || ""),
-          lrc: normalizeLyrics(item.lrc),
-        }))
+      return name.replace(/\\.[^.]+$/, "").trim();
+    };
+
+    const toTrack = (entry) => {
+      const url = String(entry.audio || entry.url || entry.src || entry.file || "");
+      const name = String(entry.name || entry.title || "").trim();
+      return {
+        name: name || titleFromUrl(url),
+        artist: String(entry.artist || entry.author || ""),
+        url: url,
+        pic: String(entry.cover || entry.pic || ""),
+        lrc: normalizeLyrics(entry.lyrics || entry.lrc),
+      };
+    };
+
+    // Same tolerant splitting as src/utils/music-player.ts: the server may hand
+    // this over as JSON, as JSON inside a string, or as a Java toString().
+    const stripWrapper = (value) => {
+      let text = String(value).trim();
+      if (
+        (text.charAt(0) === "{" && text.slice(-1) === "}") ||
+        (text.charAt(0) === "[" && text.slice(-1) === "]")
+      ) {
+        text = text.slice(1, -1).trim();
+      }
+      if (
+        (text.charAt(0) === '"' && text.slice(-1) === '"') ||
+        (text.charAt(0) === "'" && text.slice(-1) === "'")
+      ) {
+        text = text.slice(1, -1);
+      }
+      return text.trim();
+    };
+
+    const splitTopLevel = (body) => {
+      const parts = [];
+      let depth = 0;
+      let quote = null;
+      let current = "";
+      for (let index = 0; index < body.length; index += 1) {
+        const character = body.charAt(index);
+        const escaped = body.charAt(index - 1) === "\\\\";
+        if (quote) {
+          current += character;
+          if (character === quote && !escaped) quote = null;
+          continue;
+        }
+        if (character === '"' || character === "'") {
+          quote = character;
+          current += character;
+          continue;
+        }
+        if (character === "{" || character === "[") depth += 1;
+        if (character === "}" || character === "]") depth -= 1;
+        if (character === "," && depth === 0) {
+          parts.push(current);
+          current = "";
+          continue;
+        }
+        current += character;
+      }
+      if (current.trim()) parts.push(current);
+      return parts.map((part) => part.trim()).filter(Boolean);
+    };
+
+    const readPairs = (element) => {
+      const pairs = {};
+      // Anchored to the element start or a comma so a query string such as
+      // ?token=abc in a URL is not mistaken for a field name.
+      const keyAt = /(?:^|,)\\s*([A-Za-z_][\\w-]*)\\s*[:=]\\s*/g;
+      const keys = Array.from(element.matchAll(keyAt));
+      if (!keys.length) return pairs;
+      keys.forEach((match, position) => {
+        const valueStart = match.index + match[0].length;
+        const nextKey = keys[position + 1];
+        const value = nextKey
+          ? element.slice(valueStart, nextKey.index).replace(/,\\s*$/, "")
+          : element.slice(valueStart);
+        pairs[match[1]] = stripWrapper(value);
+      });
+      return pairs;
+    };
+
+    const parseCustomTracks = (raw) => {
+      if (raw === null || raw === undefined || raw === "") return [];
+      if (Array.isArray(raw)) {
+        return raw
+          .filter((item) => item && typeof item === "object")
+          .map(toTrack)
+          .filter((track) => track.url);
+      }
+      if (typeof raw === "object") {
+        return parseCustomTracks(
+          Array.isArray(raw.items) ? raw.items : [raw],
+        );
+      }
+      if (typeof raw !== "string") return [];
+      const text = raw.trim();
+      if (!text || text === "[]" || text === "{}") return [];
+      let parsed = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch (error) {
+        parsed = null;
+      }
+      if (parsed && typeof parsed === "object") return parseCustomTracks(parsed);
+      const body = stripWrapper(text);
+      if (!body) return [];
+      return splitTopLevel(body)
+        .map((element) => toTrack(readPairs(stripWrapper(element))))
         .filter((track) => track.url);
     };
 

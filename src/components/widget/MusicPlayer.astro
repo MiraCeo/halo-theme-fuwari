@@ -36,6 +36,18 @@ const layoutId = `${widgetId}-layout`;
 const templateId = `playlist-item-template-${widgetId}`;
 const tracksId = `music-tracks-${widgetId}`;
 const playerScript = buildMusicPlayerScript(widgetId);
+
+/*
+ * The custom track list is an `array` field in the settings, so the template
+ * receives whatever the server stringifies it to - valid JSON, JSON inside a
+ * string, or a Java `toString()` dump such as `[{audio=/upload/a.mp3, ...}]`.
+ * `parseCustomTracks` in src/utils/music-player.ts accepts every shape that can
+ * produce, so the value is passed through verbatim.
+ *
+ * The element is `text/plain`, not `application/json`, because the content is
+ * not guaranteed to be valid JSON. Nothing parses it as JSON: the player reads
+ * `textContent` and hands it to the tolerant parser.
+ */
 ---
 
 <div
@@ -43,7 +55,9 @@ const playerScript = buildMusicPlayerScript(widgetId);
   th:if="${theme.config.music != null and theme.config.music.enable}"
   th:with="musicTitle=${#strings.isEmpty(theme.config.music.title) ? #messages.msg('widget.music.title') : theme.config.music.title},
     showLyrics=${theme.config.music.show_lyrics != null and theme.config.music.show_lyrics},
-    autoplay=${theme.config.music.autoplay != null and theme.config.music.autoplay}"
+    autoplay=${theme.config.music.autoplay != null and theme.config.music.autoplay},
+    metingOn=${theme.config.music.meting != null and theme.config.music.meting.enable},
+    customOn=${theme.config.music.custom_tracks != null and theme.config.music.custom_tracks.enable}"
 >
   <WidgetLayout
     name={Astro.props.title}
@@ -60,17 +74,18 @@ const playerScript = buildMusicPlayerScript(widgetId);
       th:attr="data-server=${theme.config.music.meting != null and not #strings.isEmpty(theme.config.music.meting.server) ? theme.config.music.meting.server : 'netease'},
         data-type=${theme.config.music.meting != null and not #strings.isEmpty(theme.config.music.meting.type) ? theme.config.music.meting.type : 'playlist'},
         data-id=${theme.config.music.meting != null ? theme.config.music.meting.id : ''},
-        data-api=${theme.config.music.meting != null ? theme.config.music.meting.api : ''},
+        data-api=${metingOn ? theme.config.music.meting.api : ''},
+        data-custom=${customOn ? theme.config.music.custom_tracks.items : ''},
         data-volume=${theme.config.music.volume == null ? 0.7 : theme.config.music.volume},
         data-play-mode=${#strings.isEmpty(theme.config.music.play_mode) ? 'list' : theme.config.music.play_mode},
         data-show-lyrics=${showLyrics ? 'true' : 'false'},
         data-autoplay=${autoplay ? 'true' : 'false'}"
     >
       <script
-        type="application/json"
+        type="text/plain"
         id={tracksId}
-        th:if="${not #strings.isEmpty(theme.config.music.custom_tracks)}"
-        th:utext="${theme.config.music.custom_tracks}"></script>
+        th:if="${customOn}"
+        th:utext="${theme.config.music.custom_tracks.items}"></script>
       <div class="mb-2 flex items-center gap-2 px-1">
         <div class="group relative h-14 w-14 shrink-0">
           <div

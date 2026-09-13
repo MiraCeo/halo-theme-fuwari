@@ -21,6 +21,7 @@ import {
   normalizeLyrics,
   parseCustomTracks,
   parseLRC,
+  titleFromUrl,
 } from "../src/utils/music-player.ts";
 
 let passed = 0;
@@ -195,15 +196,114 @@ check("parseCustomTracks: empty input is an empty list, not an error", () => {
   assert.deepEqual(parseCustomTracks(null), []);
 });
 
+check("parseCustomTracks: unusable input yields nothing, never throws", () => {
+  // The parser deliberately degrades instead of throwing: a thrown error only
+  // surfaces as the generic "failed to load" message, which tells the site owner
+  // nothing about which field is wrong.
+  assert.deepEqual(parseCustomTracks("{not json}"), []);
+  assert.deepEqual(parseCustomTracks("just some text"), []);
+  assert.deepEqual(parseCustomTracks(42), []);
+  assert.deepEqual(parseCustomTracks(true), []);
+  assert.deepEqual(parseCustomTracks("[]"), []);
+  assert.deepEqual(parseCustomTracks("{}"), []);
+});
+
+check("parseCustomTracks: a bare object counts as one track", () => {
+  const tracks = parseCustomTracks('{"name":"a","url":"/u.mp3"}');
+  assert.equal(tracks.length, 1);
+  assert.equal(tracks[0].url, "/u.mp3");
+});
+
+// The settings expose tracks as an `array` field, so the template receives
+// whatever the server stringifies it to. All of these shapes are real
+// possibilities and must parse.
+check("parseCustomTracks: accepts the settings group shape", () => {
+  const tracks = parseCustomTracks({
+    enable: true,
+    items: [{ audio: "/upload/a.mp3", name: "A", cover: "/upload/a.jpg" }],
+  });
+  assert.deepEqual(tracks, [
+    {
+      name: "A",
+      artist: "",
+      url: "/upload/a.mp3",
+      pic: "/upload/a.jpg",
+      lrc: "",
+    },
+  ]);
+});
+
+check("parseCustomTracks: accepts a real array of objects", () => {
+  const tracks = parseCustomTracks([
+    { audio: "/upload/a.mp3", name: "A" },
+    { audio: "/upload/b.mp3" },
+  ]);
+  assert.deepEqual(
+    tracks.map((track) => track.name),
+    ["A", "b"],
+  );
+});
+
+check("parseCustomTracks: accepts a Java toString() dump", () => {
+  // SpEL stringifies a list of maps roughly like this, with unquoted keys and
+  // values, which is why the relaxed parser exists at all.
+  const tracks = parseCustomTracks(
+    "[{audio=/upload/a.mp3, name=一刻千金, cover=/upload/a.jpg}, {audio=/upload/b.mp3, name=B}]",
+  );
+  assert.deepEqual(
+    tracks.map((track) => track.name),
+    ["一刻千金", "B"],
+  );
+  assert.deepEqual(
+    tracks.map((track) => track.url),
+    ["/upload/a.mp3", "/upload/b.mp3"],
+  );
+});
+
+check("parseCustomTracks: a URL with a query string survives", () => {
+  const tracks = parseCustomTracks(
+    "[{audio=/upload/a.mp3?token=abc&v=2, name=With Query, cover=/upload/c.jpg}]",
+  );
+  assert.equal(tracks[0].url, "/upload/a.mp3?token=abc&v=2");
+  assert.equal(tracks[0].name, "With Query");
+  assert.equal(tracks[0].pic, "/upload/c.jpg");
+});
+
+check("parseCustomTracks: an unescaped comma in a URL is a known limit", () => {
+  // The relaxed format has no quoting to tell `a,b` from two fields, and Halo
+  // attachment URLs never contain a raw comma. Pinned so the behaviour is
+  // visible rather than surprising; the JSON path handles it correctly.
+  const raw = parseCustomTracks(
+    "[{audio=/upload/a.mp3?x=1,y=2, name=N, cover=/c.jpg}]",
+  );
+  assert.equal(raw.length, 1);
+
+  const json = parseCustomTracks(
+    JSON.stringify([
+      { audio: "/upload/a.mp3?x=1,y=2", name: "N", cover: "/c.jpg" },
+    ]),
+  );
+  assert.equal(json[0].url, "/upload/a.mp3?x=1,y=2");
+  assert.equal(json[0].name, "N");
+});
+
 check(
-  "parseCustomTracks: malformed JSON throws so the player can report it",
+  "parseCustomTracks: lyrics with commas, brackets and equals survive",
   () => {
-    assert.throws(() => parseCustomTracks("{not json}"), SyntaxError);
+    const lyrics = "[00:12.50]第一行，带逗号\n[00:16.00]a=b [not a tag]";
+    const tracks = parseCustomTracks({
+      items: [{ audio: "/u.mp3", name: "N", lyrics }],
+    });
+    assert.equal(tracks[0].lrc, lyrics);
   },
 );
 
-check("parseCustomTracks: a non-array payload throws", () => {
-  assert.throws(() => parseCustomTracks('{"name":"a"}'), TypeError);
+check("parseCustomTracks: JSON inside a string still works", () => {
+  const tracks = parseCustomTracks(
+    JSON.stringify([{ audio: "/u.mp3", name: "S", lyrics: "a\nb" }]),
+  );
+  assert.equal(tracks[0].name, "S");
+  assert.equal(tracks[0].lrc, "a\nb");
 });
 
 check("parseCustomTracks: non-object entries are ignored", () => {
@@ -221,6 +321,35 @@ check("parseCustomTracks: tolerates the Meting field names too", () => {
   assert.equal(tracks[0].name, "t");
   assert.equal(tracks[0].artist, "a");
   assert.equal(tracks[0].pic, "/c.jpg");
+});
+
+// --- title derivation ---
+
+check("titleFromUrl: strips the directory, query and extension", () => {
+  assert.equal(titleFromUrl("/upload/song.mp3"), "song");
+  assert.equal(titleFromUrl("/upload/music/一刻千金.mp3"), "一刻千金");
+  assert.equal(titleFromUrl("/upload/a.b.c.mp3"), "a.b.c");
+  assert.equal(titleFromUrl("/upload/song.mp3?token=1"), "song");
+  assert.equal(titleFromUrl("/upload/song.mp3#part"), "song");
+  assert.equal(titleFromUrl("/upload/%E4%B8%80%E5%88%BB.mp3"), "一刻");
+  assert.equal(titleFromUrl("https://cdn.example.com/a/b/track.flac"), "track");
+});
+
+check("titleFromUrl: empty and odd input does not throw", () => {
+  assert.equal(titleFromUrl(""), "");
+  assert.equal(titleFromUrl("/"), "");
+  assert.equal(titleFromUrl("/upload/%ZZ.mp3"), "%ZZ", "bad escapes survive");
+});
+
+check("parseCustomTracks: an empty title falls back to the filename", () => {
+  const tracks = parseCustomTracks({
+    items: [
+      { audio: "/upload/一刻千金.mp3" },
+      { audio: "/upload/x.mp3", name: "给定了" },
+    ],
+  });
+  assert.equal(tracks[0].name, "一刻千金");
+  assert.equal(tracks[1].name, "给定了");
 });
 
 // --- isLyricsUrl ---
@@ -302,13 +431,20 @@ check("mapMetingTrack: accepts the name/artist schema", () => {
 });
 
 check("mapMetingTrack: falls back without throwing on sparse entries", () => {
+  // No invented "Unknown" placeholder any more: a missing title leaves the name
+  // empty, and the player shows its own localised fallback for that.
   assert.deepEqual(mapMetingTrack({}), {
-    name: "Unknown",
-    artist: "Unknown",
+    name: "",
+    artist: "",
     url: "",
     pic: "",
     lrc: "",
   });
+});
+
+check("mapMetingTrack: a missing title falls back to the filename", () => {
+  const track = mapMetingTrack({ url: "https://cdn.example.com/一刻千金.mp3" });
+  assert.equal(track.name, "一刻千金");
 });
 
 check(
@@ -675,35 +811,37 @@ check(
 );
 
 check(
-  "template markup: custom tracks travel as JSON, not as an attribute",
+  "template markup: custom tracks travel in a text element, not an attribute",
   () => {
     const root = path.resolve(import.meta.dirname, "..");
     const markup = readFileSync(
       path.join(root, "src/components/widget/MusicPlayer.astro"),
       "utf8",
     );
-    // JSON is full of quotes; putting it in a data attribute means HTML-escaping
-    // it, which is exactly the fragile path this avoids.
+    // The payload is full of quotes and brackets; putting it in a data attribute
+    // means HTML-escaping it, which is exactly the fragile path this avoids.
+    // `text/plain` rather than `application/json` because the server may hand
+    // over a Java toString() dump, which is not valid JSON.
     assert.ok(
-      markup.includes('type="application/json"'),
-      "tracks block must be a JSON script element",
+      markup.includes('type="text/plain"'),
+      "tracks block must be a plain text element",
     );
     assert.ok(
       markup.includes("th:utext"),
-      "Thymeleaf must inject the raw JSON into that element",
+      "Thymeleaf must inject the raw value into that element",
     );
     assert.ok(
       !markup.includes("data-custom-tracks"),
-      "must not smuggle the JSON through a data attribute",
+      "must not smuggle the payload through a data attribute",
     );
     assert.ok(
       MUSIC_PLAYER_SOURCE.includes('"music-tracks-" + widgetId'),
-      "player must read the JSON element by the same id pattern",
+      "player must read the element by the same id pattern",
     );
   },
 );
 
-check("template markup: the player is gated by the feature switch", () => {
+check("template markup: the player is gated by the feature switches", () => {
   const root = path.resolve(import.meta.dirname, "..");
   const markup = readFileSync(
     path.join(root, "src/components/widget/MusicPlayer.astro"),
@@ -713,9 +851,24 @@ check("template markup: the player is gated by the feature switch", () => {
     markup.includes("theme.config.music.enable"),
     "the player must not render when music is switched off",
   );
+  // Tracks and the Meting URL are each behind their own switch now.
   assert.ok(
-    markup.includes("not #strings.isEmpty(theme.config.music.custom_tracks)"),
-    "the JSON track list is emitted only when present",
+    markup.includes("theme.config.music.custom_tracks.enable"),
+    "custom tracks must be gated by their own switch",
+  );
+  assert.ok(
+    markup.includes("theme.config.music.meting.enable"),
+    "the Meting URL must not be sent when Meting is switched off",
+  );
+  assert.ok(
+    markup.includes('th:utext="${theme.config.music.custom_tracks.items}"'),
+    "the track list is injected verbatim for the tolerant parser",
+  );
+  // Not application/json: the server may emit a Java toString() dump, which is
+  // not valid JSON, and nothing parses it as JSON.
+  assert.ok(
+    markup.includes('type="text/plain"'),
+    "the track element must not claim to be JSON",
   );
   assert.ok(
     !markup.includes("api.i-meto.com"),
