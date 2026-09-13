@@ -14,7 +14,7 @@ spec:
   issues: https://github.com/MiraCeo/halo-theme-fuwari/issues
   settingName: "theme-fuwari-miraceo-setting"
   configMapName: "theme-fuwari-miraceo-configMap"
-  version: "2.1.5"
+  version: "2.1.4"
   requires: ">=2.25.0"
   license:
     - name: "MIT"
