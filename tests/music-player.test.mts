@@ -293,6 +293,41 @@ check("parseCustomTracks: an enable-only group yields nothing", () => {
   assert.deepEqual(parseCustomTracks({ enable: true }), []);
 });
 
+// --- settings schema contract ---
+
+check("settings: track fields collapse until an audio file is chosen", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const settings = readFileSync(path.join(root, "settings.yaml"), "utf8");
+  const lines = settings.split("\n");
+
+  // Find every slot group and check the fields that follow `audio`.
+  const slotStarts = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => /^\s+name: slot\d+\s*$/.test(line))
+    .map(({ index }) => index);
+  assert.equal(slotStarts.length, 4, "expected four track slots");
+
+  for (const start of slotStarts) {
+    // Each slot block runs until the next slot (or the end of the array).
+    const next = slotStarts.find((index) => index > start) ?? lines.length;
+    const block = lines.slice(start, next).join("\n");
+
+    const gated = block.match(/if: \$value\.audio/g) ?? [];
+    assert.equal(
+      gated.length,
+      3,
+      `slot at line ${start + 1} must gate title, cover and lyrics (found ${gated.length})`,
+    );
+    // The audio picker itself must stay visible, or the slot could never be filled.
+    const audioIndex = block.indexOf("name: audio");
+    const firstIf = block.indexOf("if: $value.audio");
+    assert.ok(
+      audioIndex !== -1 && (firstIf === -1 || audioIndex < firstIf),
+      "the audio picker must come before the gated fields",
+    );
+  }
+});
+
 check("parseCustomTracks: accepts a real array of objects", () => {
   const tracks = parseCustomTracks([
     { audio: "/upload/a.mp3", name: "A" },

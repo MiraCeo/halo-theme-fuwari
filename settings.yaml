@@ -210,6 +210,12 @@ spec:
         # Nested groups render inline in the submenu, like the Meting fields.
         # Four slots is enough for the common case ("one or two tracks"); adding
         # more is a matter of copying a block.
+        #
+        # Everything after the audio picker is hidden until an audio file is
+        # chosen, so an unused slot shows one control instead of five. The
+        # condition is a plain truthiness test rather than a property path:
+        # whichever shape the attachment value takes (URL string or object), a
+        # chosen file is truthy and an empty slot is not.
         - $formkit: group
           name: custom_tracks
           label: 自定义曲目列表（推荐）
@@ -228,15 +234,18 @@ spec:
                 - $formkit: attachment
                   name: audio
                   label: 音频
-                  help: "留空标题时用文件名作为曲名"
+                  help: "选择音频后展开其余设置；留空标题时用文件名作为曲名"
                 - $formkit: text
+                  if: $value.audio
                   name: name
                   label: 标题
                   help: "留空则自动取音频文件名"
                 - $formkit: attachment
+                  if: $value.audio
                   name: cover
                   label: 封面
                 - $formkit: textarea
+                  if: $value.audio
                   name: lyrics
                   label: 歌词
                   rows: 4
@@ -249,12 +258,15 @@ spec:
                   name: audio
                   label: 音频
                 - $formkit: text
+                  if: $value.audio
                   name: name
                   label: 标题
                 - $formkit: attachment
+                  if: $value.audio
                   name: cover
                   label: 封面
                 - $formkit: textarea
+                  if: $value.audio
                   name: lyrics
                   label: 歌词
                   rows: 4
@@ -266,12 +278,15 @@ spec:
                   name: audio
                   label: 音频
                 - $formkit: text
+                  if: $value.audio
                   name: name
                   label: 标题
                 - $formkit: attachment
+                  if: $value.audio
                   name: cover
                   label: 封面
                 - $formkit: textarea
+                  if: $value.audio
                   name: lyrics
                   label: 歌词
                   rows: 4
@@ -283,12 +298,15 @@ spec:
                   name: audio
                   label: 音频
                 - $formkit: text
+                  if: $value.audio
                   name: name
                   label: 标题
                 - $formkit: attachment
+                  if: $value.audio
                   name: cover
                   label: 封面
                 - $formkit: textarea
+                  if: $value.audio
                   name: lyrics
                   label: 歌词
                   rows: 4
