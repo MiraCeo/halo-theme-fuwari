@@ -293,6 +293,60 @@ check("parseCustomTracks: an enable-only group yields nothing", () => {
   assert.deepEqual(parseCustomTracks({ enable: true }), []);
 });
 
+// Regression: the live site stored a track whose filename contains a comma.
+// Halo sends the group as a Java Map.toString(), the comma was read as a field
+// separator, and the title collapsed to the extension.
+const COMMA_AUDIO =
+  "/upload/%E5%A1%9E%E5%A3%AC%E5%94%B1%E7%89%87-MSR,Alaina%20Cross%20-%20BATTLEPLAN%20ARCLIGHT.mp3";
+
+check("parseCustomTracks: reads Halo's nested slot group", () => {
+  // The shape Halo actually sends: a nested map per slot.
+  const tracks = parseCustomTracks(
+    `{enable=true, slot1={audio=${COMMA_AUDIO}}, slot2={}, slot3={}, slot4={}}`,
+  );
+  assert.equal(tracks.length, 1);
+  assert.equal(tracks[0].url, COMMA_AUDIO);
+  assert.equal(
+    tracks[0].name,
+    "塞壬唱片-MSR,Alaina Cross - BATTLEPLAN ARCLIGHT",
+  );
+});
+
+check("parseCustomTracks: a comma in a filename is not a separator", () => {
+  for (const [label, raw] of [
+    ["nested", `{slot1={audio=${COMMA_AUDIO}, name=A}}`],
+    ["flat", `{slot1_audio=${COMMA_AUDIO}, slot1_name=A}`],
+    ["json", JSON.stringify({ slot1: { audio: COMMA_AUDIO, name: "A" } })],
+  ] as const) {
+    const tracks = parseCustomTracks(raw);
+    assert.equal(tracks.length, 1, `${label}: expected one track`);
+    assert.equal(tracks[0].url, COMMA_AUDIO, `${label}: url was truncated`);
+    assert.equal(tracks[0].name, "A", `${label}: name lost`);
+  }
+});
+
+check("parseCustomTracks: the object form also reads nested slots", () => {
+  const tracks = parseCustomTracks({
+    enable: true,
+    slot1: { audio: COMMA_AUDIO },
+    slot2: {},
+  });
+  assert.equal(tracks.length, 1);
+  assert.equal(tracks[0].url, COMMA_AUDIO);
+  assert.equal(
+    tracks[0].name,
+    "塞壬唱片-MSR,Alaina Cross - BATTLEPLAN ARCLIGHT",
+  );
+});
+
+check("parseCustomTracks: nested slots keep lyrics with commas", () => {
+  const tracks = parseCustomTracks(
+    `{slot1={audio=/u.mp3, name=N, lyrics=[00:01.00]a,b [c]}}`,
+  );
+  assert.equal(tracks[0].lrc, "[00:01.00]a,b [c]");
+  assert.equal(tracks[0].name, "N");
+});
+
 // --- settings schema contract ---
 
 check("settings: track fields collapse until an audio file is chosen", () => {
@@ -604,6 +658,120 @@ check("snippet: never contains a close-script sequence", () => {
   assert.ok(
     source.includes('const closeTag = "</scr" + "ipt"'),
     "buildMusicPlayerScript must keep its close-tag guard",
+  );
+});
+
+check("snippet: no invented placeholder titles", () => {
+  // The inline player and the exported helpers drifted apart once: the module
+  // gained a filename fallback while the snippet kept a hardcoded "Unknown".
+  assert.ok(
+    !MUSIC_PLAYER_SOURCE.includes('"Unknown"'),
+    "the snippet must not invent placeholder names",
+  );
+  assert.ok(
+    MUSIC_PLAYER_SOURCE.includes("titleFromUrl"),
+    "the snippet must derive a title from the audio URL",
+  );
+
+  const root = path.resolve(import.meta.dirname, "..");
+  const source = readFileSync(
+    path.join(root, "src/utils/music-player.ts"),
+    "utf8",
+  );
+  const modulePart = source.slice(
+    0,
+    source.indexOf("export const MUSIC_PLAYER_SOURCE"),
+  );
+  assert.ok(
+    !modulePart.includes('"Unknown"'),
+    "the module must not invent placeholder names either",
+  );
+});
+
+check("snippet: mirrors the module for the shared helpers", () => {
+  // Keep the two copies honest about the pieces that must behave identically.
+  for (const helper of [
+    "parseLRC",
+    "normalizeLyrics",
+    "parseCustomTracks",
+    "titleFromUrl",
+    "isLyricsUrl",
+    "buildMetingUrl",
+    "mapMetingTrack",
+    "stripWrapper",
+    "splitAssignments",
+    "splitElements",
+    "tracksFromFlatKeys",
+  ]) {
+    assert.ok(
+      MUSIC_PLAYER_SOURCE.includes(helper),
+      `the snippet must define ${helper}, like the module does`,
+    );
+  }
+});
+
+check("snippet: source survives being embedded in the module", () => {
+  // The snippet lives in a backtick template literal, so a stray backtick or an
+  // unescaped `${` inside it truncates that literal and the build fails with a
+  // parse error pointing at an unrelated line. Asserted here rather than only in
+  // buildMusicPlayerScript, so a failure names the real cause.
+  const root = path.resolve(import.meta.dirname, "..");
+  const lines = readFileSync(
+    path.join(root, "src/utils/music-player.ts"),
+    "utf8",
+  ).split("\n");
+
+  const start = lines.findIndex((line) =>
+    line.includes("export const MUSIC_PLAYER_SOURCE"),
+  );
+  assert.ok(start !== -1, "MUSIC_PLAYER_SOURCE declaration must exist");
+
+  // Walk forward to the first unescaped backtick, which closes the literal.
+  let closeLine = -1;
+  for (
+    let index = start;
+    index < lines.length && closeLine === -1;
+    index += 1
+  ) {
+    const line =
+      index === start
+        ? lines[index].slice(lines[index].indexOf("`") + 1)
+        : lines[index];
+    let escaped = false;
+    for (const character of line) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (character === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (character === "`") {
+        closeLine = index;
+        break;
+      }
+    }
+  }
+
+  assert.ok(closeLine > start, "the literal must close below its declaration");
+  const strayBackticks = lines
+    .slice(start + 1, closeLine)
+    .map((line, offset) => ({ line, number: start + offset + 2 }))
+    .filter(({ line }) => line.includes("`"));
+  assert.deepEqual(
+    strayBackticks.map(({ number, line }) => `${number}: ${line.trim()}`),
+    [],
+    "no backtick may appear inside the snippet: it would end the literal early",
+  );
+
+  const placeholders = lines
+    .slice(start, closeLine + 1)
+    .filter((line) => /(?<!\\)\$\{/.test(line));
+  assert.deepEqual(
+    placeholders.map((line) => line.trim()),
+    [],
+    "an unescaped ${ inside the snippet would be interpolated by the build",
   );
 });
 

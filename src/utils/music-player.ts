@@ -104,16 +104,55 @@ export function normalizeLyrics(
 }
 
 /**
- * Split a relaxed, brace-delimited list into one string per top-level element.
+ * Split a relaxed map body into `key=value` assignments.
  *
- * The theme settings expose custom tracks as an `array` field, and the template
- * only sees whatever the server stringifies it to. Depending on how Halo
- * serialises it that may be JSON, JSON inside a string, or a Java `toString()`
- * such as `[{name=Song, url=/upload/a.mp3}, {name=Other}]`. Splitting on
- * top-level commas while tracking nesting and quotes handles all of them, so the
- * caller does not have to know which shape arrived.
+ * Java's `Map.toString()` separates entries with `, key=`, but a value may also
+ * contain a comma - attachment filenames routinely do, e.g.
+ * `-MSR,Alaina Cross - BATTLEPLAN.mp3`. A comma is therefore only a separator
+ * when the next token is a key and the brace nesting is back at the start level,
+ * so the comma inside a `{...}` value is kept.
  */
-function splitTopLevel(body: string): string[] {
+function splitAssignments(body: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let current = "";
+
+  for (let index = 0; index < body.length; index += 1) {
+    const character = body[index];
+    const escaped = body[index - 1] === "\\";
+
+    if (quote) {
+      current += character;
+      if (character === quote && !escaped) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      current += character;
+      continue;
+    }
+    if (character === "{") depth += 1;
+    if (character === "}") depth -= 1;
+
+    if (character === "," && depth === 0) {
+      // Only cut when what follows looks like the next `key=`, otherwise this
+      // comma is part of the current value.
+      if (/^\s*[A-Za-z_][\w-]*\s*[:=]/.test(body.slice(index + 1))) {
+        parts.push(current);
+        current = "";
+        continue;
+      }
+    }
+    current += character;
+  }
+
+  if (current.trim()) parts.push(current);
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+/** Split a `[{...}, {...}]` body into the individual `{...}` elements. */
+function splitElements(body: string): string[] {
   const parts: string[] = [];
   let depth = 0;
   let quote: string | null = null;
@@ -136,60 +175,76 @@ function splitTopLevel(body: string): string[] {
     if (character === "{" || character === "[") depth += 1;
     if (character === "}" || character === "]") depth -= 1;
     if (character === "," && depth === 0) {
-      parts.push(current);
+      if (current.trim()) parts.push(current.trim());
       current = "";
       continue;
     }
     current += character;
   }
 
-  if (current.trim()) parts.push(current);
-  return parts.map((part) => part.trim()).filter(Boolean);
+  if (current.trim()) parts.push(current.trim());
+  return parts.filter(Boolean);
 }
 
-/** Strip one layer of matching braces or brackets, plus surrounding quotes. */
+/**
+ * Strip one layer of wrapping braces, brackets or quotes.
+ *
+ * A wrapper only counts when the opener's matching close sits at the very end.
+ * A lyric line such as `[00:01.00]a,b [c]` merely starts with `[` and ends with
+ * `]`; those two do not pair, and trimming them would eat a character from each
+ * end of the timestamps.
+ */
 function stripWrapper(value: string): string {
   let text = value.trim();
-  if (
-    (text.startsWith("{") && text.endsWith("}")) ||
-    (text.startsWith("[") && text.endsWith("]"))
-  ) {
-    text = text.slice(1, -1).trim();
+  if (text.length < 2) return text;
+
+  const closer =
+    text[0] === "{"
+      ? "}"
+      : text[0] === "["
+        ? "]"
+        : text[0] === '"' || text[0] === "'"
+          ? text[0]
+          : null;
+  if (!closer) return text;
+
+  let depth = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === text[0]) depth += 1;
+    else if (character === closer) {
+      depth -= 1;
+      if (depth === 0) {
+        // Only a close at the very end makes this a wrapper.
+        return index === text.length - 1 ? text.slice(1, -1).trim() : text;
+      }
+    }
   }
-  if (
-    (text.startsWith('"') && text.endsWith('"')) ||
-    (text.startsWith("'") && text.endsWith("'"))
-  ) {
-    text = text.slice(1, -1);
-  }
-  return text.trim();
+  return text;
 }
 
 /**
  * Read `key=value` (or `key:"value"`) pairs out of one relaxed element.
  *
- * Values may legitimately contain `=`, `,`, `:` and brackets - URLs and LRC
- * lines do - so a key is only recognised at the start of the element or right
- * after a comma. Without that anchor a query string such as `?token=abc` reads
- * as a field named `token` and truncates the URL.
+ * Splitting is delegated to `splitAssignments`, which knows that a value may
+ * contain commas. A key is only recognised at the start of an assignment, so a
+ * query string such as `?token=abc` is not read as a field named `token`.
  */
 function readPairs(element: string): Record<string, string> {
   const pairs: Record<string, string> = {};
-  const keyAt = /(?:^|,)\s*([A-Za-z_][\w-]*)\s*[:=]\s*/g;
-  const keys = [...element.matchAll(keyAt)];
-  if (keys.length === 0) return pairs;
-
-  keys.forEach((match, position) => {
-    const valueStart = (match.index ?? 0) + match[0].length;
-    const nextKey = keys[position + 1];
-    const value =
-      nextKey === undefined
-        ? element.slice(valueStart)
-        : element.slice(valueStart, nextKey.index).replace(/,\s*$/, "");
-    pairs[match[1]] = stripWrapper(value);
-  });
-
+  for (const assignment of splitAssignments(element)) {
+    const match = /^([A-Za-z_][\w-]*)\s*[:=]\s*([\s\S]*)$/.exec(assignment);
+    if (!match) continue;
+    pairs[match[1]] = stripWrapper(match[2]);
+  }
   return pairs;
+}
+
+/** Unwrap a nested `{...}` value, or null when the value is not a map. */
+function nestedBody(value: string): string | null {
+  const text = value.trim();
+  if (!text.startsWith("{") || !text.endsWith("}")) return null;
+  return text.slice(1, -1);
 }
 
 /**
@@ -242,14 +297,26 @@ function tracksFromFlatKeys(
   const bySlot = new Map<string, Record<string, unknown>>();
   let matched = false;
 
+  const slotOf = (key: string) => {
+    const match = /^slot(\d+)(?:_([A-Za-z]+))?$/.exec(key);
+    if (!match) return null;
+    return { slot: match[1].padStart(4, "0"), field: match[2] };
+  };
+
   for (const [key, value] of Object.entries(source)) {
-    const match = /^slot(\d+)_([A-Za-z]+)$/.exec(key);
-    if (!match) continue;
+    const parsed = slotOf(key);
+    if (!parsed) continue;
     matched = true;
-    const slot = match[1].padStart(4, "0");
-    const fields = bySlot.get(slot) ?? {};
-    fields[match[2]] = value;
-    bySlot.set(slot, fields);
+    const fields = bySlot.get(parsed.slot) ?? {};
+
+    if (parsed.field) {
+      // Flat shape: slot1_audio, slot2_name, ...
+      fields[parsed.field] = value;
+    } else if (value && typeof value === "object") {
+      // Halo's own shape: the slot group arrives whole, as slot1={audio=...}.
+      Object.assign(fields, value as Record<string, unknown>);
+    }
+    bySlot.set(parsed.slot, fields);
   }
 
   if (!matched) return null;
@@ -306,10 +373,36 @@ export function parseCustomTracks(raw: unknown): MusicTrack[] {
 
   const body = stripWrapper(text);
   if (!body) return [];
+
+  // The slot group is what Halo actually sends, either as `slot1={audio=...}` or
+  // as flat `slot1_audio=...` keys. Read it first and recurse per slot, so a
+  // comma inside a filename never has to be told apart from a separator.
+  if (/(?:^|,\s*)slot\d+\s*[:=]/.test(body)) {
+    const slots = splitAssignments(body).filter((part) =>
+      /^slot\d+\s*[:=]/.test(part),
+    );
+    return slots
+      .map((part) => {
+        const match = /^slot\d+\s*[:=]\s*([\s\S]*)$/.exec(part);
+        if (!match) return [];
+        const inner = nestedBody(match[1]);
+        if (inner === null) return [];
+        const fields = readPairs(inner);
+        return [toTrack(fields)];
+      })
+      .flat()
+      .filter((track) => track.url);
+  }
+
   const pairs = readPairs(body);
   const flat = tracksFromFlatKeys(pairs);
   if (flat) return flat;
-  return splitTopLevel(body)
+
+  // `[{...}, {...}]` is an array of track objects; `a=x, b=y` is one object's
+  // assignments. Splitting by nesting depth tells them apart, because braces
+  // inside an element keep the depth above zero.
+  const elements = splitElements(body);
+  return elements
     .map((element) => toTrack(readPairs(stripWrapper(element))))
     .filter((track) => track.url);
 }
@@ -516,21 +609,59 @@ export const MUSIC_PLAYER_SOURCE = `
 
     // Same tolerant splitting as src/utils/music-player.ts: the server may hand
     // this over as JSON, as JSON inside a string, or as a Java toString().
+    const splitElements = (body) => {
+      const parts = [];
+      let depth = 0;
+      let quote = null;
+      let current = "";
+      for (let index = 0; index < body.length; index += 1) {
+        const character = body.charAt(index);
+        const escaped = body.charAt(index - 1) === "\\\\";
+        if (quote) {
+          current += character;
+          if (character === quote && !escaped) quote = null;
+          continue;
+        }
+        if (character === '"' || character === "'") {
+          quote = character;
+          current += character;
+          continue;
+        }
+        if (character === "{") depth += 1;
+        if (character === "}") depth -= 1;
+        if (character === "," && depth === 0) {
+          if (current.trim()) parts.push(current.trim());
+          current = "";
+          continue;
+        }
+        current += character;
+      }
+      if (current.trim()) parts.push(current.trim());
+      return parts.filter(Boolean);
+    };
+
+    // A wrapper only counts when the opener's matching close sits at the very
+    // end. A lyric line such as [00:01.00]a,b [c] merely starts with [ and ends
+    // with ], and those two do not pair.
     const stripWrapper = (value) => {
-      let text = String(value).trim();
-      if (
-        (text.charAt(0) === "{" && text.slice(-1) === "}") ||
-        (text.charAt(0) === "[" && text.slice(-1) === "]")
-      ) {
-        text = text.slice(1, -1).trim();
+      const text = String(value).trim();
+      if (text.length < 2) return text;
+      const first = text.charAt(0);
+      const closer =
+        first === "{" ? "}" : first === "[" ? "]" : first === '"' || first === "'" ? first : "";
+      if (!closer) return text;
+      let depth = 0;
+      for (let index = 0; index < text.length; index += 1) {
+        const character = text.charAt(index);
+        if (character === first) depth += 1;
+        else if (character === closer) {
+          depth -= 1;
+          if (depth === 0) {
+            return index === text.length - 1 ? text.slice(1, -1).trim() : text;
+          }
+        }
       }
-      if (
-        (text.charAt(0) === '"' && text.slice(-1) === '"') ||
-        (text.charAt(0) === "'" && text.slice(-1) === "'")
-      ) {
-        text = text.slice(1, -1);
-      }
-      return text.trim();
+      return text;
     };
 
     const splitTopLevel = (body) => {
@@ -564,36 +695,74 @@ export const MUSIC_PLAYER_SOURCE = `
       return parts.map((part) => part.trim()).filter(Boolean);
     };
 
+    // Java's Map.toString() separates entries with ', key=', but a value may
+    // contain a comma too - attachment filenames routinely do. So a comma only
+    // cuts when the next token is a key and brace nesting is back to the top.
+    const splitAssignments = (body) => {
+      const parts = [];
+      let depth = 0;
+      let quote = null;
+      let current = "";
+      for (let index = 0; index < body.length; index += 1) {
+        const character = body.charAt(index);
+        const escaped = body.charAt(index - 1) === "\\\\";
+        if (quote) {
+          current += character;
+          if (character === quote && !escaped) quote = null;
+          continue;
+        }
+        if (character === '"' || character === "'") {
+          quote = character;
+          current += character;
+          continue;
+        }
+        if (character === "{") depth += 1;
+        if (character === "}") depth -= 1;
+        if (character === "," && depth === 0) {
+          const rest = body.slice(index + 1);
+          if (/^\\s*[A-Za-z_][\\w-]*\\s*[:=]/.test(rest)) {
+            parts.push(current);
+            current = "";
+            continue;
+          }
+        }
+        current += character;
+      }
+      if (current.trim()) parts.push(current);
+      return parts.map((part) => part.trim()).filter(Boolean);
+    };
+
     const readPairs = (element) => {
       const pairs = {};
-      // Anchored to the element start or a comma so a query string such as
-      // ?token=abc in a URL is not mistaken for a field name.
-      const keyAt = /(?:^|,)\\s*([A-Za-z_][\\w-]*)\\s*[:=]\\s*/g;
-      const keys = Array.from(element.matchAll(keyAt));
-      if (!keys.length) return pairs;
-      keys.forEach((match, position) => {
-        const valueStart = match.index + match[0].length;
-        const nextKey = keys[position + 1];
-        const value = nextKey
-          ? element.slice(valueStart, nextKey.index).replace(/,\\s*$/, "")
-          : element.slice(valueStart);
-        pairs[match[1]] = stripWrapper(value);
+      splitAssignments(element).forEach((assignment) => {
+        const match = /^([A-Za-z_][\\w-]*)\\s*[:=]\\s*([\\s\\S]*)$/.exec(assignment);
+        if (match) pairs[match[1]] = stripWrapper(match[2]);
       });
       return pairs;
     };
 
-    // One group per track slot is emitted as flat slot1_audio / slot2_name keys,
-    // so the slot number has to be read back out and the fields regrouped.
+    const nestedBody = (value) => {
+      const text = String(value).trim();
+      if (text.charAt(0) !== "{" || text.slice(-1) !== "}") return null;
+      return text.slice(1, -1);
+    };
+
+    // Halo sends one nested group per slot (slot1={audio=...}); the flat
+    // slot1_audio form is accepted too.
     const tracksFromFlatKeys = (source) => {
       const bySlot = {};
       let matched = false;
       Object.keys(source).forEach((key) => {
-        const match = /^slot(\\d+)_([A-Za-z]+)$/.exec(key);
+        const match = /^slot(\\d+)(?:_([A-Za-z]+))?$/.exec(key);
         if (!match) return;
         matched = true;
         const slot = match[1];
         bySlot[slot] = bySlot[slot] || {};
-        bySlot[slot][match[2]] = source[key];
+        if (match[2]) {
+          bySlot[slot][match[2]] = source[key];
+        } else if (source[key] && typeof source[key] === "object") {
+          Object.assign(bySlot[slot], source[key]);
+        }
       });
       if (!matched) return null;
       return Object.keys(bySlot)
@@ -627,9 +796,25 @@ export const MUSIC_PLAYER_SOURCE = `
       if (parsed && typeof parsed === "object") return parseCustomTracks(parsed);
       const body = stripWrapper(text);
       if (!body) return [];
+
+      // Read the slot groups first, recursing per slot, so a comma inside a
+      // filename never has to be told apart from a separator.
+      if (/(?:^|,\\s*)slot\\d+\\s*[:=]/.test(body)) {
+        return splitAssignments(body)
+          .filter((part) => /^slot\\d+\\s*[:=]/.test(part))
+          .map((part) => {
+            const match = /^slot\\d+\\s*[:=]\\s*([\\s\\S]*)$/.exec(part);
+            const inner = match ? nestedBody(match[1]) : null;
+            return inner === null ? null : toTrack(readPairs(inner));
+          })
+          .filter((track) => track && track.url);
+      }
+
       const flat = tracksFromFlatKeys(readPairs(body));
       if (flat) return flat;
-      return splitTopLevel(body)
+      // An array of track objects versus one object's assignments: splitting by
+      // nesting depth tells them apart.
+      return splitElements(body)
         .map((element) => toTrack(readPairs(stripWrapper(element))))
         .filter((track) => track.url);
     };
@@ -646,13 +831,19 @@ export const MUSIC_PLAYER_SOURCE = `
         .replace(":id", encodeURIComponent(cfg.id))
         .replace(":r", String(Math.random()));
 
-    const mapMetingTrack = (item) => ({
-      name: item.title || item.name || "Unknown",
-      artist: item.author || item.artist || "Unknown",
-      url: item.url || "",
-      pic: item.pic || item.cover || "",
-      lrc: item.lrc || "",
-    });
+    const mapMetingTrack = (item) => {
+      const url = String(item.url || "");
+      const name = String(item.title || item.name || "").trim();
+      return {
+        // No invented placeholder: an empty name lets the UI localise its own
+        // fallback, and the filename is used when there is one.
+        name: name || titleFromUrl(url),
+        artist: item.author || item.artist || "",
+        url: url,
+        pic: item.pic || item.cover || "",
+        lrc: item.lrc || "",
+      };
+    };
 
     const ui = {
       loading: widget.querySelector(".music-loading"),
