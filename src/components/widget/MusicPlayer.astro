@@ -27,14 +27,16 @@ const style = Astro.props.style;
 const widgetId = `music-widget-${Math.random().toString(36).slice(2, 9)}`;
 const layoutId = `${widgetId}-layout`;
 const templateId = `playlist-item-template-${widgetId}`;
+const tracksId = `music-tracks-${widgetId}`;
 const playerScript = buildMusicPlayerScript(widgetId);
 ---
 
 <div
   class="contents"
-  th:if="${not #strings.isEmpty(widget.id)}"
+  th:if="${not #strings.isEmpty(widget.id) or not #strings.isEmpty(widget.custom_tracks)}"
   th:with="musicTitle=${#strings.isEmpty(widget.title) ? #messages.msg('widget.music.title') : widget.title},
-    showLyrics=${widget.show_lyrics == null ? true : widget.show_lyrics}"
+    showLyrics=${widget.show_lyrics != null and widget.show_lyrics},
+    autoplay=${widget.autoplay != null and widget.autoplay}"
 >
   <WidgetLayout
     name="音乐"
@@ -51,11 +53,17 @@ const playerScript = buildMusicPlayerScript(widgetId);
       th:attr="data-server=${#strings.isEmpty(widget.server) ? 'netease' : widget.server},
         data-type=${#strings.isEmpty(widget.type) ? 'playlist' : widget.type},
         data-id=${widget.id},
-        data-api=${#strings.isEmpty(widget.api) ? 'https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r' : widget.api},
+        data-api=${widget.api},
         data-volume=${widget.volume == null ? 0.7 : widget.volume},
         data-play-mode=${#strings.isEmpty(widget.play_mode) ? 'list' : widget.play_mode},
-        data-show-lyrics=${showLyrics ? 'true' : 'false'}"
+        data-show-lyrics=${showLyrics ? 'true' : 'false'},
+        data-autoplay=${autoplay ? 'true' : 'false'}"
     >
+      <script
+        type="application/json"
+        id={tracksId}
+        th:if="${not #strings.isEmpty(widget.custom_tracks)}"
+        th:utext="${widget.custom_tracks}"></script>
       <div class="mb-2 flex items-center gap-2 px-1">
         <div class="group relative h-14 w-14 shrink-0">
           <div

@@ -18,6 +18,8 @@ import {
   formatTime,
   isLyricsUrl,
   mapMetingTrack,
+  normalizeLyrics,
+  parseCustomTracks,
   parseLRC,
 } from "../src/utils/music-player.ts";
 
@@ -89,27 +91,137 @@ check("parseLRC: output is sorted by time regardless of input order", () => {
   );
 });
 
-check("parseLRC: drops metadata, blank and untimed lines", () => {
+check("parseLRC: metadata, blank and timestamp-only lines are dropped", () => {
   const source =
     "[ti:Title]\n[ar:Artist]\n[00:01.00]kept\n\n[00:02.00]   \nno timestamp";
-  assert.deepEqual(parseLRC(source), [{ time: 1, text: "kept" }]);
+  assert.deepEqual(parseLRC(source), [
+    { time: 1, text: "kept" },
+    { time: -1, text: "no timestamp" },
+  ]);
 });
 
 check("parseLRC: empty-ish input returns an empty list", () => {
   assert.deepEqual(parseLRC(""), []);
   assert.deepEqual(parseLRC(undefined), []);
   assert.deepEqual(parseLRC(null), []);
-  assert.deepEqual(parseLRC("not lyrics at all"), []);
+});
+
+check("parseLRC: accepts [mm:ss] without a fraction", () => {
+  assert.deepEqual(parseLRC("[00:05]no fraction"), [
+    { time: 5, text: "no fraction" },
+  ]);
+  assert.deepEqual(parseLRC("[01:30]minute and a half"), [
+    { time: 90, text: "minute and a half" },
+  ]);
+});
+
+check("parseLRC: untimed lines sort after timed ones", () => {
+  // time -1 must not jump to the front of the list.
+  const lyrics = parseLRC("plain line\n[00:10.00]timed line");
+  assert.deepEqual(
+    lyrics.map((line) => line.text),
+    ["timed line", "plain line"],
+  );
+  assert.equal(lyrics[0].time, 10);
+  assert.equal(lyrics[1].time, -1);
+});
+
+// --- normalizeLyrics ---
+
+check("normalizeLyrics: joins an array one line per entry", () => {
+  assert.equal(
+    normalizeLyrics(["[00:01.00]a", "[00:02.00]b"]),
+    "[00:01.00]a\n[00:02.00]b",
+  );
+});
+
+check("normalizeLyrics: passes strings through and defaults to empty", () => {
+  assert.equal(normalizeLyrics("inline"), "inline");
+  assert.equal(normalizeLyrics(undefined), "");
+  assert.equal(normalizeLyrics(null), "");
+  assert.equal(normalizeLyrics([]), "");
+});
+
+// --- parseCustomTracks ---
+
+check("parseCustomTracks: maps the documented shape", () => {
+  const tracks = parseCustomTracks(
+    JSON.stringify([
+      {
+        name: "Song",
+        artist: "Singer",
+        url: "/upload/song.mp3",
+        pic: "/upload/cover.jpg",
+        lrc: ["[00:01.00]a"],
+      },
+    ]),
+  );
+  assert.deepEqual(tracks, [
+    {
+      name: "Song",
+      artist: "Singer",
+      url: "/upload/song.mp3",
+      pic: "/upload/cover.jpg",
+      lrc: "[00:01.00]a",
+    },
+  ]);
+});
+
+check("parseCustomTracks: a single entry is the common case", () => {
+  // The settings help text advertises "one or two tracks in a JSON array".
+  const tracks = parseCustomTracks(
+    '[{"name":"一刻千金","artist":"MiraCeo","url":"/upload/music/song.mp3"}]',
+  );
+  assert.equal(tracks.length, 1);
+  assert.equal(tracks[0].name, "一刻千金");
+  assert.equal(tracks[0].pic, "");
+  assert.equal(tracks[0].lrc, "");
+});
+
+check("parseCustomTracks: drops entries without a url", () => {
+  const tracks = parseCustomTracks(
+    '[{"name":"a","url":""},{"name":"b","url":"/upload/b.mp3"},{"name":"c"}]',
+  );
+  assert.deepEqual(
+    tracks.map((track) => track.name),
+    ["b"],
+  );
+});
+
+check("parseCustomTracks: empty input is an empty list, not an error", () => {
+  assert.deepEqual(parseCustomTracks(""), []);
+  assert.deepEqual(parseCustomTracks("   "), []);
+  assert.deepEqual(parseCustomTracks(undefined), []);
+  assert.deepEqual(parseCustomTracks(null), []);
 });
 
 check(
-  "parseLRC: [mm:ss]-only timestamps are ignored (known limitation)",
+  "parseCustomTracks: malformed JSON throws so the player can report it",
   () => {
-    // The regex requires a fractional part. Nothing in the Meting output relies on
-    // the short form, but pinning it keeps the behaviour visible.
-    assert.deepEqual(parseLRC("[00:05]no fraction"), []);
+    assert.throws(() => parseCustomTracks("{not json}"), SyntaxError);
   },
 );
+
+check("parseCustomTracks: a non-array payload throws", () => {
+  assert.throws(() => parseCustomTracks('{"name":"a"}'), TypeError);
+});
+
+check("parseCustomTracks: non-object entries are ignored", () => {
+  const tracks = parseCustomTracks('["junk", 42, null, {"url":"/u.mp3"}]');
+  assert.deepEqual(
+    tracks.map((track) => track.url),
+    ["/u.mp3"],
+  );
+});
+
+check("parseCustomTracks: tolerates the Meting field names too", () => {
+  const tracks = parseCustomTracks(
+    '[{"title":"t","author":"a","url":"/u.mp3","cover":"/c.jpg"}]',
+  );
+  assert.equal(tracks[0].name, "t");
+  assert.equal(tracks[0].artist, "a");
+  assert.equal(tracks[0].pic, "/c.jpg");
+});
 
 // --- isLyricsUrl ---
 
@@ -236,6 +348,101 @@ check("buildMusicPlayerScript: escapes the widget id", () => {
   assert.doesNotThrow(() => new Function(script));
 });
 
+check("snippet: never contains a close-script sequence", () => {
+  // Regression guard: a close-script sequence inside the snippet ends the HTML
+  // element early AND silently truncates the template literal it lives in. Both
+  // mistakes were made while writing this widget.
+  const closeTag = "</scr" + "ipt";
+  assert.equal(
+    MUSIC_PLAYER_SOURCE.split(closeTag).length - 1,
+    0,
+    `snippet must never contain ${closeTag}`,
+  );
+  assert.equal(
+    buildMusicPlayerScript("music-widget-x").split(closeTag).length - 1,
+    0,
+    "nor may the generated script introduce one",
+  );
+  // The build helper watches for it too, since a future edit could reintroduce
+  // it without any other test noticing.
+  const root = path.resolve(import.meta.dirname, "..");
+  const source = readFileSync(
+    path.join(root, "src/utils/music-player.ts"),
+    "utf8",
+  );
+  assert.ok(
+    source.includes('const closeTag = "</scr" + "ipt"'),
+    "buildMusicPlayerScript must keep its close-tag guard",
+  );
+});
+
+check(
+  "buildMusicPlayerScript: binds via a classic function, not an arrow",
+  () => {
+    // An arrow IIFE would still work, but the classic form keeps the snippet
+    // readable in built output and avoids `this` surprises.
+    const script = buildMusicPlayerScript("music-widget-x");
+    assert.ok(script.startsWith("(function (widgetId) {"));
+  },
+);
+
+// --- top-bar toggle contract ---
+
+check("music-toggle: reads the knob the player publishes", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const toggle = readFileSync(
+    path.join(root, "src/utils/music-toggle.ts"),
+    "utf8",
+  );
+  assert.ok(
+    toggle.includes("window.__fuwariMusic?.toggle()"),
+    "click must drive the shared knob",
+  );
+  assert.ok(
+    toggle.includes("window.__fuwariMusic?.subscribe"),
+    "icon must follow real playback state, not the click",
+  );
+  assert.ok(
+    !toggle.includes('aria-pressed", "true")') ||
+      toggle.includes("renderState"),
+    "state rendering must go through one place",
+  );
+});
+
+check("music-toggle: the knob name matches between toggle and player", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const toggle = readFileSync(
+    path.join(root, "src/utils/music-toggle.ts"),
+    "utf8",
+  );
+  assert.ok(
+    toggle.includes("__fuwariMusic") &&
+      MUSIC_PLAYER_SOURCE.includes("__fuwariMusic"),
+    "both sides must agree on window.__fuwariMusic",
+  );
+});
+
+check("music-toggle: the button element id matches the navbar markup", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const navbar = readFileSync(
+    path.join(root, "src/components/Navbar.astro"),
+    "utf8",
+  );
+  assert.ok(
+    navbar.includes('id="music-toggle"'),
+    "Navbar must render the id the toggle looks up",
+  );
+  assert.ok(
+    navbar.includes("music-toggle-icon") &&
+      navbar.includes("music-toggle-playing"),
+    "both icon hooks must exist in the markup",
+  );
+  assert.ok(
+    navbar.includes("show_music_toggle"),
+    "the toggle must be gated by the setting",
+  );
+});
+
 check("MUSIC_PLAYER_SOURCE: guards against double binding", () => {
   assert.ok(
     MUSIC_PLAYER_SOURCE.includes("fireflyBound"),
@@ -310,6 +517,77 @@ check(
     );
   },
 );
+
+check(
+  "template markup: custom tracks travel as JSON, not as an attribute",
+  () => {
+    const root = path.resolve(import.meta.dirname, "..");
+    const markup = readFileSync(
+      path.join(root, "src/components/widget/MusicPlayer.astro"),
+      "utf8",
+    );
+    // JSON is full of quotes; putting it in a data attribute means HTML-escaping
+    // it, which is exactly the fragile path this avoids.
+    assert.ok(
+      markup.includes('type="application/json"'),
+      "tracks block must be a JSON script element",
+    );
+    assert.ok(
+      markup.includes("th:utext"),
+      "Thymeleaf must inject the raw JSON into that element",
+    );
+    assert.ok(
+      !markup.includes("data-custom-tracks"),
+      "must not smuggle the JSON through a data attribute",
+    );
+    assert.ok(
+      MUSIC_PLAYER_SOURCE.includes('"music-tracks-" + widgetId'),
+      "player must read the JSON element by the same id pattern",
+    );
+  },
+);
+
+check("template markup: the widget hides itself when unconfigured", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const markup = readFileSync(
+    path.join(root, "src/components/widget/MusicPlayer.astro"),
+    "utf8",
+  );
+  assert.ok(
+    markup.includes("not #strings.isEmpty(widget.custom_tracks)"),
+    "an unconfigured widget must not render at all",
+  );
+  assert.ok(
+    !markup.includes("api.i-meto.com"),
+    "the dead default mirror must stay removed",
+  );
+});
+
+check("template markup: lyrics are opt-in and follow the setting", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const markup = readFileSync(
+    path.join(root, "src/components/widget/MusicPlayer.astro"),
+    "utf8",
+  );
+  assert.ok(
+    markup.includes("widget.show_lyrics != null and widget.show_lyrics"),
+    "lyrics must be opt-in: a missing key means off",
+  );
+  // The runtime rule must match, or the button would appear for people who left
+  // the setting off.
+  const source = readFileSync(
+    path.join(root, "src/utils/music-player.ts"),
+    "utf8",
+  );
+  assert.ok(
+    source.includes('widget.dataset.showLyrics === "true"'),
+    "player must treat only an explicit true as enabled",
+  );
+  assert.ok(
+    source.includes("hasTimedLyrics"),
+    "a track with no timed lyrics must hide the button too",
+  );
+});
 
 check("template markup: labels come from Thymeleaf, never hardcoded", () => {
   const root = path.resolve(import.meta.dirname, "..");

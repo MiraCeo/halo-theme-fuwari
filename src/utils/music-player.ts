@@ -1,21 +1,19 @@
 /*
  * Client-side behaviour of the sidebar music widget.
  *
- * This module owns the widget's client logic. It is consumed two ways, because
- * the widget must bind during initial HTML parsing rather than waiting for a
- * deferred module:
+ * This module owns the widget's client logic. It is consumed two ways:
  *
- *   1. `MusicPlayer.astro` renders `MUSIC_PLAYER_SOURCE` into an inline
- *      `<script is:inline>` block. The snippet is an IIFE body and receives the
- *      per-widget element id through `define:vars`.
- *   2. The pure helpers (`formatTime`, `parseLRC`, `isLyricsUrl`,
- *      `buildMetingUrl`, `mapMetingTrack`) are exported for tests and for any
- *      future module-based caller.
+ *   1. `MusicPlayer.astro` renders `buildMusicPlayerScript(widgetId)` through
+ *      `<Fragment set:html>`. Astro compiles the inside of a `<script>` tag even
+ *      when it is `is:inline`, so the snippet cannot be interpolated there as an
+ *      expression.
+ *   2. The pure helpers (`formatTime`, `parseLRC`, `normalizeLyrics`,
+ *      `parseCustomTracks`, `isLyricsUrl`, `buildMetingUrl`, `mapMetingTrack`)
+ *      are exported for tests and for any future module-based caller.
  *
- * `MUSIC_PLAYER_SOURCE` must stay valid inside an `is:inline` script: plain
- * ES2020, no imports, no TypeScript syntax. It must also never contain the
- * character sequence that closes a script element, since the block is emitted
- * verbatim.
+ * `MUSIC_PLAYER_SOURCE` must stay valid inside an inline script: plain ES2020,
+ * no imports, no TypeScript syntax. It must also never contain the character
+ * sequence that closes a script element, since the block is emitted verbatim.
  */
 
 export interface MusicTrack {
@@ -49,27 +47,88 @@ export function formatTime(seconds: number): string {
 /**
  * Parse LRC text into time-ordered lines. A line carrying several timestamps
  * yields one entry per timestamp, which is how repeated choruses are written.
- * `[mm:ss.xx]` (centiseconds) and `[mm:ss.xxx]` (milliseconds) are both
- * accepted; the fraction divisor follows the digit count.
+ * `[mm:ss]`, `[mm:ss.xx]` (centiseconds) and `[mm:ss.xxx]` (milliseconds) are
+ * all accepted; the fraction divisor follows the digit count.
+ *
+ * A line with no timestamp is still kept, with `time: -1`, so plain lyrics
+ * display without karaoke highlighting instead of being dropped.
  */
 export function parseLRC(lrc: string | undefined | null): MusicLyricLine[] {
   if (!lrc) return [];
   const result: MusicLyricLine[] = [];
-  const timeReg = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
+  const timeReg = /\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
+  const tagReg = /\[[^\]]*\]/g;
+
   lrc.split("\n").forEach((line) => {
     const matches = Array.from(line.matchAll(timeReg));
-    if (matches.length === 0) return;
-    const text = line.replace(timeReg, "").trim();
-    if (!text) return;
+    // Metadata such as [ti:...] / [ar:...] is bracketed but carries no timeline;
+    // dropping it keeps it out of the untimed lines below.
+    const remainder = line.replace(tagReg, "").trim();
+
+    if (matches.length === 0) {
+      if (!remainder || remainder !== line.trim()) return;
+      result.push({ time: -1, text: remainder });
+      return;
+    }
+    if (!remainder) return;
+
     matches.forEach((match) => {
       const m = Number.parseInt(match[1], 10);
       const s = Number.parseInt(match[2], 10);
-      const ms = Number.parseInt(match[3], 10);
-      const time = m * 60 + s + ms / (match[3].length === 3 ? 1000 : 100);
-      result.push({ time, text });
+      const fraction = match[3];
+      const ms = fraction ? Number.parseInt(fraction, 10) : 0;
+      const divisor = fraction ? (fraction.length === 3 ? 1000 : 100) : 1;
+      result.push({ time: m * 60 + s + ms / divisor, text: remainder });
     });
   });
-  return result.sort((a, b) => a.time - b.time);
+
+  // Untimed lines keep their relative order at the end rather than sorting to
+  // the front, where -1 would otherwise place them.
+  const timed = result.filter((line) => line.time >= 0);
+  const untimed = result.filter((line) => line.time < 0);
+  timed.sort((a, b) => a.time - b.time);
+  return [...timed, ...untimed];
+}
+
+/**
+ * Normalise the `lrc` field of a track. Accepts a single string (LRC text or a
+ * URL) or an array of per-line strings, which is how the settings UI asks for
+ * lyrics so people do not have to escape newlines inside JSON.
+ */
+export function normalizeLyrics(
+  value: string | string[] | undefined | null,
+): string {
+  if (Array.isArray(value)) return value.map((line) => String(line)).join("\n");
+  if (typeof value === "string") return value;
+  return "";
+}
+
+/**
+ * Convert the `custom_tracks` JSON from the theme settings into tracks.
+ * Throws on malformed JSON or a non-array payload; entries without a URL are
+ * dropped, matching how Meting responses are filtered.
+ */
+export function parseCustomTracks(
+  raw: string | undefined | null,
+): MusicTrack[] {
+  if (!raw || !raw.trim()) return [];
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed)) {
+    throw new TypeError("custom tracks must be a JSON array");
+  }
+  return parsed
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null,
+    )
+    .map((item) => ({
+      name: String(item.name || item.title || "Unknown"),
+      artist: String(item.artist || item.author || ""),
+      url: String(item.url ?? ""),
+      pic: String(item.pic || item.cover || ""),
+      lrc: normalizeLyrics(item.lrc as string | string[] | undefined),
+    }))
+    .filter((track) => track.url);
 }
 
 /**
@@ -101,7 +160,7 @@ export function mapMetingTrack(item: Record<string, unknown>): MusicTrack {
     artist: String(item.author || item.artist || "Unknown"),
     url: String(item.url ?? ""),
     pic: String(item.pic || item.cover || ""),
-    lrc: String(item.lrc ?? ""),
+    lrc: normalizeLyrics(item.lrc as string | string[] | undefined),
   };
 }
 
@@ -117,6 +176,15 @@ export function mapMetingTrack(item: Record<string, unknown>): MusicTrack {
  * depending on any surrounding scope.
  */
 export function buildMusicPlayerScript(widgetId: string): string {
+  // A literal close tag inside the snippet would end the element early, and
+  // because the snippet lives in a template literal it would also silently
+  // truncate that literal at build time. Catch it here instead.
+  const closeTag = "</scr" + "ipt";
+  if (MUSIC_PLAYER_SOURCE.includes(closeTag)) {
+    throw new Error(
+      `MUSIC_PLAYER_SOURCE contains ${closeTag}, which would truncate the script block`,
+    );
+  }
   return `(function (widgetId) {${MUSIC_PLAYER_SOURCE}\n})(${JSON.stringify(widgetId)});`;
 }
 
@@ -139,16 +207,23 @@ export const MUSIC_PLAYER_SOURCE = `
       return value && !value.includes("#{") ? value : fallback;
     };
 
+    // Two independent sources. The custom list wins when both are configured so
+    // that adding it always takes effect without clearing the API field.
+    //
+    // The list is delivered as JSON in a sibling script[type=application/json]
+    // element rather than in a data attribute: JSON is full of quotes, and
+    // HTML-escaping them into an attribute value is where this gets fragile.
+    const tracksEl = document.getElementById("music-tracks-" + widgetId);
+    const customTracks = tracksEl ? tracksEl.textContent || "" : "";
     const cfg = {
       server: widget.dataset.server || "netease",
       type: widget.dataset.type || "playlist",
       id: widget.dataset.id || "",
-      api:
-        widget.dataset.api ||
-        "https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r",
+      api: widget.dataset.api || "",
       volume: Number.parseFloat(widget.dataset.volume || "0.7"),
       playMode: widget.dataset.playMode || "list",
-      showLyrics: widget.dataset.showLyrics !== "false",
+      autoplay: widget.dataset.autoplay === "true",
+      showLyrics: widget.dataset.showLyrics === "true",
       i18n: {
         noPlaying: t("widget.music.noPlaying", "\\u672a\\u64ad\\u653e"),
         lyrics: t("widget.music.lyrics", "\\u6b4c\\u8bcd"),
@@ -167,6 +242,10 @@ export const MUSIC_PLAYER_SOURCE = `
           "\\u6b4c\\u8bcd\\u52a0\\u8f7d\\u5931\\u8d25",
         ),
         noSongs: t("widget.music.noSongs", "\\u6682\\u65e0\\u6b4c\\u66f2"),
+        notConfigured: t(
+          "widget.music.notConfigured",
+          "\\u672a\\u914d\\u7f6e\\u97f3\\u6e90",
+        ),
         error: t("widget.music.error", "\\u97f3\\u4e50\\u52a0\\u8f7d\\u5931\\u8d25"),
         play: t("widget.music.play", "\\u64ad\\u653e"),
         pause: t("widget.music.pause", "\\u6682\\u505c"),
@@ -185,21 +264,50 @@ export const MUSIC_PLAYER_SOURCE = `
     const parseLRC = (lrc) => {
       if (!lrc) return [];
       const result = [];
-      const timeReg = /\\[(\\d{2}):(\\d{2})\\.(\\d{2,3})\\]/g;
+      const timeReg = /\\[(\\d{1,2}):(\\d{2})(?:\\.(\\d{2,3}))?\\]/g;
+      const tagReg = /\\[[^\\]]*\\]/g;
       lrc.split("\\n").forEach((line) => {
         const matches = Array.from(line.matchAll(timeReg));
-        if (matches.length === 0) return;
-        const text = line.replace(timeReg, "").trim();
-        if (!text) return;
+        const remainder = line.replace(tagReg, "").trim();
+        if (matches.length === 0) {
+          if (!remainder || remainder !== line.trim()) return;
+          result.push({ time: -1, text: remainder });
+          return;
+        }
+        if (!remainder) return;
         matches.forEach((match) => {
           const m = Number.parseInt(match[1], 10);
           const s = Number.parseInt(match[2], 10);
-          const ms = Number.parseInt(match[3], 10);
-          const time = m * 60 + s + ms / (match[3].length === 3 ? 1000 : 100);
-          result.push({ time, text });
+          const fraction = match[3];
+          const ms = fraction ? Number.parseInt(fraction, 10) : 0;
+          const divisor = fraction ? (fraction.length === 3 ? 1000 : 100) : 1;
+          result.push({ time: m * 60 + s + ms / divisor, text: remainder });
         });
       });
-      return result.sort((a, b) => a.time - b.time);
+      const timed = result.filter((line) => line.time >= 0);
+      const untimed = result.filter((line) => line.time < 0);
+      timed.sort((a, b) => a.time - b.time);
+      return timed.concat(untimed);
+    };
+
+    const normalizeLyrics = (value) =>
+      Array.isArray(value) ? value.map(String).join("\\n") : String(value || "");
+
+    const parseCustomTracks = (raw) => {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        throw new TypeError("custom tracks must be a JSON array");
+      }
+      return parsed
+        .filter((item) => item && typeof item === "object")
+        .map((item) => ({
+          name: String(item.name || item.title || "Unknown"),
+          artist: String(item.artist || item.author || ""),
+          url: String(item.url || ""),
+          pic: String(item.pic || item.cover || ""),
+          lrc: normalizeLyrics(item.lrc),
+        }))
+        .filter((track) => track.url);
     };
 
     const isLyricsUrl = (value) =>
@@ -259,6 +367,43 @@ export const MUSIC_PLAYER_SOURCE = `
       ),
     };
 
+    // The top-bar music button is a separate component, so both sides rendezvous
+    // through this knob: whichever runs first creates it and the other attaches.
+    // notify() is replaced below once the UI updater exists.
+    const api = (window.__fuwariMusic =
+      window.__fuwariMusic ||
+      {
+        set: null,
+        toggle: null,
+        isPlaying: function () {
+          return false;
+        },
+        subscribe: function (callback) {
+          api.subscribers.push(callback);
+          api.notify();
+          return function () {
+            const index = api.subscribers.indexOf(callback);
+            if (index >= 0) api.subscribers.splice(index, 1);
+          };
+        },
+        subscribers: [],
+        notify: function () {
+          for (let i = 0; i < api.subscribers.length; i += 1) {
+            try {
+              api.subscribers[i](api.isPlaying());
+            } catch (error) {
+              // A broken listener must not stop the others or the player.
+            }
+          }
+        },
+      });
+    api.isPlaying = function () {
+      return !!api.set && api.set.isPlaying();
+    };
+    api.toggle = function () {
+      if (api.set) api.set.toggle();
+    };
+
     // The markup already carries localised labels from Thymeleaf; these keep the
     // runtime state (play/pause, volume, active track) in the same language.
     ui.artist.textContent = cfg.i18n.noPlaying;
@@ -282,7 +427,20 @@ export const MUSIC_PLAYER_SOURCE = `
     ui.playlistContainer.setAttribute("aria-label", cfg.i18n.playlist);
     ui.cover.alt = cfg.i18n.noCover;
 
-    if (!cfg.showLyrics) ui.btnLrc.classList.add("hidden");
+    // The drawer and the play-mode button only earn their space with content to
+    // put in them. Untimed lyrics are deliberately treated as "no lyrics": there
+    // is nothing to scroll to, so the button would be a dead end.
+    const hasTimedLyrics = () =>
+      cfg.showLyrics && state.lyrics.some((line) => line.time >= 0);
+    const syncLyricsButton = () => {
+      ui.btnLrc.classList.toggle("hidden", !hasTimedLyrics());
+      ui.lrcDrawer.classList.toggle("hidden", !hasTimedLyrics());
+    };
+    const syncPlaylistButton = () => {
+      const useful = state.playlist.length > 1;
+      ui.btnDrawer.classList.toggle("hidden", !useful);
+      ui.playlistDrawer.classList.toggle("hidden", !useful);
+    };
 
     const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
@@ -322,6 +480,7 @@ export const MUSIC_PLAYER_SOURCE = `
       ui.cover.style.animationPlayState = isPlaying ? "running" : "paused";
       ui.btnPlay.title = isPlaying ? cfg.i18n.pause : cfg.i18n.play;
       ui.btnPlay.setAttribute("aria-label", ui.btnPlay.title);
+      api.notify();
     };
 
     const updateModeUI = () => {
@@ -429,6 +588,9 @@ export const MUSIC_PLAYER_SOURCE = `
     const renderLyricsUI = (lyrics, status) => {
       state.currentLrcIndex = -1;
       ui.lrcContainer.innerHTML = "";
+      // Keep the button in step with the loaded track rather than the setting
+      // alone: a track with no timed lyrics hides it again.
+      syncLyricsButton();
       const message = {
         loading: cfg.i18n.loadingLyrics,
         failed: cfg.i18n.failedLyrics,
@@ -728,31 +890,65 @@ export const MUSIC_PLAYER_SOURCE = `
 
     updateModeUI();
     updateVolumeUI();
+
+    // Neither field filled in means the widget was never configured. Say so
+    // instead of the generic load failure, which would send people looking for a
+    // broken mirror.
+    if (!customTracks.trim() && !cfg.api.trim()) {
+      ui.title.textContent = cfg.i18n.notConfigured;
+      setLoading(false);
+      api.set = { toggle: function () {}, isPlaying: function () { return false; } };
+      return;
+    }
+
+    const loadPlaylist = customTracks.trim()
+      ? function () {
+          return Promise.resolve(parseCustomTracks(customTracks));
+        }
+      : function () {
+          return fetch(buildMetingUrl()).then((response) => {
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            return response.json();
+          });
+        };
+
     setLoading(true);
-    fetch(buildMetingUrl())
-      .then((response) => {
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.json();
-      })
+    loadPlaylist()
       .then((data) => {
-        const list = Array.isArray(data) ? data : [];
-        state.playlist = list
-          .map(mapMetingTrack)
-          .filter((track) => track.url);
+        // The custom path already yields tracks; the API path still needs mapping.
+        const list = customTracks.trim()
+          ? data
+          : (Array.isArray(data) ? data : [])
+              .map(mapMetingTrack)
+              .filter((track) => track.url);
+        state.playlist = list;
         if (!state.playlist.length) {
           ui.title.textContent = cfg.i18n.noSongs;
           return;
         }
         renderPlaylist();
+        syncPlaylistButton();
         loadTrack(
           state.playMode === 2
             ? Math.floor(Math.random() * state.playlist.length)
             : 0,
-          false,
+          // Browsers block audible autoplay until the visitor has interacted
+          // with the page, so a rejected play() just leaves the button paused.
+          cfg.autoplay,
         );
       })
       .catch(() => {
         ui.title.textContent = cfg.i18n.error;
       })
       .finally(() => setLoading(false));
+
+    // Published only once playback can actually be driven, so the top-bar button
+    // stays inert until the playlist is ready.
+    api.set = {
+      toggle: togglePlay,
+      isPlaying: function () {
+        return !audio.paused;
+      },
+    };
+    api.notify();
 `;

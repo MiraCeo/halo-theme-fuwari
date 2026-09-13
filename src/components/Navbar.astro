@@ -5,6 +5,18 @@ import DisplaySettings from "./widget/DisplaySettings.svelte";
 import NavMenuPanel from "./widget/NavMenuPanel.astro";
 
 const className = Astro.props.class;
+
+/*
+ * Thymeleaf selection expression for "the sidebar has a configured music
+ * widget". Built here rather than inline so the multi-line EL stays readable.
+ * `#strings.isEmpty` treats null as empty, so a widget that predates the
+ * `custom_tracks` setting still resolves.
+ */
+const musicWidgetExpression =
+  "musicWidget=${theme.config.sidebar != null ? " +
+  "#lists.toList(theme.config.sidebar.widgets)" +
+  ".?[value == 'music' and (not #strings.isEmpty(id) or not #strings.isEmpty(custom_tracks))]" +
+  ".get(0) : null}";
 ---
 
 <div id="navbar" class="z-50 onload-animation">
@@ -56,6 +68,35 @@ const className = Astro.props.class;
 
     <div class="flex items-center">
       <Search client:only="svelte" />
+      {
+        /* Thymeleaf, not Astro: the toggle only exists when the sidebar
+           actually renders a configured music widget, so it can never be a
+           button that controls nothing. */
+      }
+      <div
+        class="contents"
+        th:if="${theme.config.base.show_music_toggle != null and theme.config.base.show_music_toggle}"
+        th:with={musicWidgetExpression}
+      >
+        <button
+          th:if="${musicWidget != null}"
+          id="music-toggle"
+          class="btn-plain scale-animation h-11 w-11 rounded-lg active:scale-90"
+          type="button"
+          aria-pressed="false"
+          th:aria-label="#{nav.musicPlay}"
+          th:title="#{nav.musicPlay}"
+        >
+          <span class="relative flex h-5 w-5 items-center justify-center">
+            <span
+              class="music-toggle-icon icon-[material-symbols--music-note-rounded] text-[1.25rem] transition-opacity duration-300"
+            ></span>
+            <span
+              class="music-toggle-playing icon-[material-symbols--graphic-eq-rounded] absolute animate-spin-slow text-[1.25rem] text-(--primary) opacity-0 transition-opacity duration-300"
+            ></span>
+          </span>
+        </button>
+      </div>
       <button
         th:unless="${theme.config.base.themeColor.fixed}"
         th:aria-label="#{nav.displaySettings}"
@@ -88,6 +129,8 @@ const className = Astro.props.class;
 </div>
 
 <script>
+  import { initMusicToggle } from "../utils/music-toggle";
+
   function loadNavbarButtons() {
     const settingBtn = document.getElementById("display-settings-switch");
     settingBtn?.addEventListener("click", () => {
@@ -106,4 +149,8 @@ const className = Astro.props.class;
 
   loadNavbarButtons();
   document.addEventListener("swup:contentReplaced", loadNavbarButtons);
+
+  // The navbar sits outside Swup's containers, so this runs once per hard load.
+  // `initMusicToggle` guards against a second binding anyway.
+  initMusicToggle();
 </script>

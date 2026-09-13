@@ -81,6 +81,9 @@ export interface Widget {
   volume?: number;
   api?: string;
   show_lyrics?: boolean;
+  autoplay?: boolean;
+  /** JSON array of tracks; takes precedence over `api` when both are set. */
+  custom_tracks?: string;
 }
 
 export interface Profile {

@@ -45,6 +45,12 @@ spec:
               value: false
               help: "隐藏访问者的主题彩色选择器"
 
+        - $formkit: switch
+          name: show_music_toggle
+          label: 显示顶栏音乐按钮
+          value: true
+          help: "在导航栏右上角显示播放/暂停按钮，仅在已配置音乐控件时出现。首次访问的访客无法自动播放，需要通过这个按钮开始播放"
+
         - $formkit: group
           name: banner
           label: Banner
@@ -251,14 +257,46 @@ spec:
             - $formkit: switch
               if: $value.value === music
               name: show_lyrics
-              label: 显示歌词按钮
-              value: true
-              help: "关闭后隐藏歌词按钮和歌词面板"
-            - $formkit: url
+              label: 歌词
+              value: false
+              help: "开启后显示歌词按钮和歌词面板。曲目没有填写歌词时该按钮始终隐藏"
+            - $formkit: switch
+              if: $value.value === music
+              name: autoplay
+              label: 自动播放
+              value: false
+              help: "开启后尝试自动播放。浏览器通常只允许有过交互的访客自动播放，首次访问时仍需要点击顶栏的音乐按钮"
+            - $formkit: text
               if: $value.value === music
               name: api
               label: 自定义 Meting API
-              help: 留空时使用 MetingJS 默认 API，地址可包含 :server、:type、:id、:r 占位符
+              placeholder: "https://example.com/meting/?server=:server&type=:type&id=:id"
+              help: |-
+                以下两种音源任选其一，留空表示不使用该音源。
+
+                【Meting API】Meting 是把网易云、QQ 音乐等平台接口统一起来的开源项目，它本身只是软件，需要有人部署成服务，这类公开服务称为"镜像"。公开镜像随时可能失效（本主题原先内置的默认镜像已经停止服务），且通过它们播放的音乐属于未授权分发，请自行判断风险。
+                推荐做法：把音频上传到 Halo 附件，改用下面的"自定义曲目列表"。
+
+                地址可包含 :server、:type、:id、:r 占位符。自建服务时通常为 https://你的域名/meting/?server=:server&type=:type&id=:id
+            - $formkit: code
+              if: $value.value === music
+              name: custom_tracks
+              label: 自定义曲目列表（推荐）
+              language: json
+              help: |-
+                填写 JSON 数组即可播放自己的音频，音频和封面请先上传到 Halo 附件，然后填写附件地址。与上面同时填写时，优先使用本列表。
+
+                [
+                  {
+                    "name": "曲名",
+                    "artist": "艺术家",
+                    "url": "/upload/song.mp3",
+                    "pic": "/upload/cover.jpg",
+                    "lrc": ["[00:12.50]第一行歌词", "[00:16.00]第二行歌词"]
+                  }
+                ]
+
+                lrc 可省略；写成字符串数组即可，一行一句，带 [分:秒.百分秒] 前缀时歌词会跟随播放高亮，不带前缀则整段静态显示。
             - $formkit: code
               if: $value.value === html
               name: html

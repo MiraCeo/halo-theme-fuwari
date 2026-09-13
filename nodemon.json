@@ -1,5 +1,5 @@
 {
   "verbose": false,
-  "watch": ["src/**/*", "public/**/*"],
-  "ext": "astro,ts,html,css"
+  "watch": ["src/**/*", "public/**/*", "settings.yaml", "ui-plugin/src/**/*"],
+  "ext": "astro,ts,html,css,yaml"
 }

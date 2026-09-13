@@ -78,12 +78,36 @@ The build output is a set of **Thymeleaf templates**, not static HTML. `astro.co
 
 ### Sidebar music widget
 
-The widget is split three ways so the logic is testable without a browser:
+The widget is split four ways so the logic is testable without a browser:
 
 - `src/components/widget/MusicPlayer.astro` - markup and per-widget ids only
 - `src/components/widget/PlaylistItem.astro` - the `<template>` row the script clones per track
 - `src/utils/music-player.ts` - `MUSIC_PLAYER_SOURCE` (the inline player) plus pure helpers
-  (`formatTime`, `parseLRC`, `isLyricsUrl`, `buildMetingUrl`, `mapMetingTrack`)
+  (`formatTime`, `parseLRC`, `normalizeLyrics`, `parseCustomTracks`, `isLyricsUrl`,
+  `buildMetingUrl`, `mapMetingTrack`)
+- `src/utils/music-toggle.ts` - the top-bar play/pause button
+
+**Sources.** A widget plays from one of two fields, and the custom list wins when both are set:
+
+- `custom_tracks` (recommended) - a JSON array of `{name, artist, url, pic, lrc}`. Audio and covers
+  live in Halo attachments, so there is no third-party dependency. `lrc` accepts a string or an
+  array of per-line strings.
+- `api` - a Meting server URL. There is deliberately **no built-in default**: the previous default
+  mirror died and broke every install that relied on it. `settings.yaml` documents the mirror
+  situation in the field help.
+
+A widget with neither field set does not render at all, which keeps the "not configured" case
+distinct from the "configured but the mirror is down" case.
+
+**Custom tracks travel as JSON inside a `script[type=application/json]` element**, not in a data
+attribute: JSON is full of quotes and HTML-escaping it into an attribute is the fragile path.
+Thymeleaf injects it with `th:utext` and the player reads `textContent`.
+
+**The top-bar button and the player are separate components** that rendezvous through
+`window.__fuwariMusic` (typed in `src/global.d.ts`). Whichever loads first creates the object;
+`set` stays `null` until the playlist is ready, so the button can never drive a player that does
+not exist. The icon follows `play`/`pause` events rather than the click, so a blocked autoplay
+leaves it paused instead of spinning misleadingly.
 
 The script still has to run inline: the sidebar sits **outside** Swup's replaced containers, so the
 widget is never re-rendered and must bind on first parse. Two constraints follow:
@@ -92,9 +116,11 @@ widget is never re-rendered and must bind on first parse. Two constraints follow
   cannot be interpolated there as an expression (it fails with an SWC "expected a semicolon" error).
   `MusicPlayer.astro` therefore emits it via `<Fragment set:html={...} />`, which Astro passes
   through untouched.
-- `MUSIC_PLAYER_SOURCE` must stay plain ES2020 with no `${...}` and no `</script` sequence.
-  `buildMusicPlayerScript()` wraps it in an IIFE and binds `widgetId`; `tests/music-player.test.mts`
-  asserts the result parses and that every `querySelector` class hook exists in the markup.
+- `MUSIC_PLAYER_SOURCE` must stay plain ES2020 with no `${...}` and no `</script` sequence, and it
+  must not contain an unescaped backtick: it lives in a template literal, so a stray backtick or
+  close tag silently truncates the literal and the build fails with a confusing
+  "`',' expected`" far from the real line. `buildMusicPlayerScript()` guards the close tag, and
+  `tests/music-player.test.mts` asserts both properties.
 
 ### Key Files
 
@@ -160,12 +186,17 @@ widget is never re-rendered and must bind on first parse. Two constraints follow
   element would never be bound because the per-page `widgetId` differs. If the sidebar ever moves,
   the widget needs rebinding on `swup` `page:view` instead of a parse-time binding.
 - `MUSIC_PLAYER_SOURCE` sets `audio.crossOrigin = "anonymous"`, which nothing in the widget needs.
-  It is harmless only while the configured Meting API and audio URLs return
-  `Access-Control-Allow-Origin`; if playback ever fails across all tracks with a CORS error while
-  the URL works in a plain `<audio>` tag, that line is the first suspect. Not verified against a
-  live Meting instance.
-- `parseLRC` requires a fractional part, so `[mm:ss]` timestamps are ignored, and `[offset:]` tags
-  are not honoured. Meting output uses the fractional form.
+  It is harmless for same-origin Halo attachments and for Meting mirrors that send
+  `Access-Control-Allow-Origin` (verified against a working public mirror). If playback ever
+  fails for every track with a CORS error while the URL works in a plain `<audio>` tag, that line
+  is the first suspect.
+- `parseLRC` treats metadata tags such as `[ti:...]` / `[ar:...]` as non-lyrics and drops them, and
+  keeps untimed lines with `time: -1` after the timed ones. Because untimed lines cannot be
+  highlighted, a track whose lyrics are entirely untimed hides the lyrics button.
 - Visitor-facing music labels are resolved twice on purpose: Thymeleaf renders them server-side so
   the widget is never briefly English, and `MUSIC_PLAYER_SOURCE` re-applies them through
   `window.i18nResources` for states that only exist at runtime (play/pause, active track).
+- Do not reintroduce a hardcoded default music API. The previous one (`api.i-meto.com`) stopped
+  serving and left every fresh install showing a load failure. Public Meting mirrors are all
+  unofficial and die regularly; the theme now ships no default and offers the custom track list
+  instead.
