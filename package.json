@@ -11,7 +11,7 @@
     "build:only": "astro build",
     "validate": "node scripts/validate-templates.mjs",
     "package": "theme-package",
-    "test": "node scripts/validate-templates.test.mjs && node --experimental-strip-types tests/theme-color.test.mts",
+    "test": "node scripts/validate-templates.test.mjs && node --experimental-strip-types tests/theme-color.test.mts && node --experimental-strip-types tests/music-player.test.mts",
     "test:ui-plugin": "pnpm --dir ui-plugin test",
     "astro": "astro",
     "format": "prettier --write .",

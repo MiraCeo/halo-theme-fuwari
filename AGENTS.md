@@ -27,15 +27,16 @@ pnpm format             # Format with Prettier (includes .astro files)
 **Testing**:
 
 ```bash
-pnpm test               # theme-color unit checks + template-validator fault injection
+pnpm test               # template validator + theme-color + music-player checks
 pnpm test:ui-plugin     # node --test on ui-plugin/tests/*.test.ts
 pnpm --dir ui-plugin type-check
 ```
 
-`pnpm test` covers the two pieces that fail silently: the shared colour maths
-(`tests/theme-color.test.mts`) and the template validator itself
-(`scripts/validate-templates.test.mjs`, which injects one defect per case and
-asserts it is reported). Run `npx tsc --noEmit` after touching `src/`.
+`pnpm test` covers the parts that fail silently: the template validator itself
+(`scripts/validate-templates.test.mjs`, which injects one defect per case), the
+shared colour maths (`tests/theme-color.test.mts`) and the sidebar music widget
+logic (`tests/music-player.test.mts`, including that the generated inline script
+parses as valid JavaScript). Run `npx tsc --noEmit` after touching `src/`.
 
 ## Architecture
 
@@ -69,11 +70,31 @@ The build output is a set of **Thymeleaf templates**, not static HTML. `astro.co
   - `.vue` - Interactive components (ThemeSwitcher, UserButton)
   - `control/`, `misc/`, `photos/`, `widget/` - Subgroups (pagination, image wrapper, photo EXIF/i18n, sidebar widgets)
 - `src/styles/` - Layered CSS: `global.css` imports Tailwind plus `variables.css`, `base.css`, `components.css`, `markdown.css`, `music-player.css`, `transition.css`, `scrollbar.css`, `photoswipe.css`, `comment-widget.css`, `utilities.css`
-- `src/utils/` - Runtime helpers (theme-color, setting-utils, content-photoswipe, photos-gallery-lightbox, photos/, date-utils, url-utils, content-utils)
+- `src/utils/` - Runtime helpers (theme-color, music-player, setting-utils, content-photoswipe, photos-gallery-lightbox, photos/, date-utils, url-utils, content-utils)
 - `src/constants/` - Layout constants, icon maps, link presets
 - `src/types/` - `config.ts` (theme config shape), `searchResult.ts`
 - `scripts/` - Build tooling: `validate-templates.mjs` (dependency-free HTML/Thymeleaf linter) plus its fault-injection test
-- `tests/` - `theme-color.test.mts`, run through node's type stripping
+- `tests/` - `theme-color.test.mts` and `music-player.test.mts`, run through node's type stripping
+
+### Sidebar music widget
+
+The widget is split three ways so the logic is testable without a browser:
+
+- `src/components/widget/MusicPlayer.astro` - markup and per-widget ids only
+- `src/components/widget/PlaylistItem.astro` - the `<template>` row the script clones per track
+- `src/utils/music-player.ts` - `MUSIC_PLAYER_SOURCE` (the inline player) plus pure helpers
+  (`formatTime`, `parseLRC`, `isLyricsUrl`, `buildMetingUrl`, `mapMetingTrack`)
+
+The script still has to run inline: the sidebar sits **outside** Swup's replaced containers, so the
+widget is never re-rendered and must bind on first parse. Two constraints follow:
+
+- Astro compiles the inside of a `<script>` tag **even when it is `is:inline`**, so the player
+  cannot be interpolated there as an expression (it fails with an SWC "expected a semicolon" error).
+  `MusicPlayer.astro` therefore emits it via `<Fragment set:html={...} />`, which Astro passes
+  through untouched.
+- `MUSIC_PLAYER_SOURCE` must stay plain ES2020 with no `${...}` and no `</script` sequence.
+  `buildMusicPlayerScript()` wraps it in an IIFE and binds `widgetId`; `tests/music-player.test.mts`
+  asserts the result parses and that every `querySelector` class hook exists in the markup.
 
 ### Key Files
 
@@ -134,3 +155,17 @@ The build output is a set of **Thymeleaf templates**, not static HTML. `astro.co
   (`#8066F0` -> `#7F66F0`). This predates the shared-module refactor; `tests/theme-color.test.mts`
   pins the current behaviour rather than pretending it is exact
 - `prettier` has no Svelte plugin configured, so `.svelte` files are not covered by `pnpm format`
+- The music widget's correctness depends on `#sidebar` staying **outside** Swup's `main` /
+  `#toc-container`. Moving it inside would make Swup replace it on every navigation, and the new
+  element would never be bound because the per-page `widgetId` differs. If the sidebar ever moves,
+  the widget needs rebinding on `swup` `page:view` instead of a parse-time binding.
+- `MUSIC_PLAYER_SOURCE` sets `audio.crossOrigin = "anonymous"`, which nothing in the widget needs.
+  It is harmless only while the configured Meting API and audio URLs return
+  `Access-Control-Allow-Origin`; if playback ever fails across all tracks with a CORS error while
+  the URL works in a plain `<audio>` tag, that line is the first suspect. Not verified against a
+  live Meting instance.
+- `parseLRC` requires a fractional part, so `[mm:ss]` timestamps are ignored, and `[offset:]` tags
+  are not honoured. Meting output uses the fractional form.
+- Visitor-facing music labels are resolved twice on purpose: Thymeleaf renders them server-side so
+  the widget is never briefly English, and `MUSIC_PLAYER_SOURCE` re-applies them through
+  `window.i18nResources` for states that only exist at runtime (play/pause, active track).

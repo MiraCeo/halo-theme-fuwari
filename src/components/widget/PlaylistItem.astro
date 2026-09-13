@@ -1,0 +1,41 @@
+---
+import { Icon } from "astro-icon/components";
+
+/*
+ * Playlist row template for the sidebar music widget.
+ *
+ * Rendered once inside <template>; `MUSIC_PLAYER_SOURCE` clones it per track and
+ * fills in `.item-cover`, `.item-title`, `.item-artist`, so those class hooks
+ * are a contract with src/utils/music-player.ts.
+ */
+---
+
+<div
+  class="playlist-item group flex cursor-pointer items-center gap-3 rounded-lg p-2 transition-colors hover:bg-neutral-50 dark:hover:bg-white/5"
+>
+  <div
+    class="relative h-8 w-8 shrink-0 overflow-hidden rounded-md bg-neutral-200 dark:bg-neutral-700"
+  >
+    <img
+      src=""
+      class="item-cover h-full w-full object-cover"
+      loading="lazy"
+      alt=""
+    />
+    <div
+      class="item-active-overlay absolute inset-0 hidden items-center justify-center bg-(--primary)/20"
+    >
+      <Icon
+        name="material-symbols:graphic-eq-rounded"
+        class="text-sm text-(--primary)"
+      />
+    </div>
+  </div>
+  <div class="min-w-0 flex-1">
+    <div
+      class="item-title truncate text-xs font-bold text-neutral-700 transition-colors group-hover:text-(--primary) dark:text-neutral-200"
+    >
+    </div>
+    <div class="item-artist truncate text-[10px] text-neutral-400"></div>
+  </div>
+</div>

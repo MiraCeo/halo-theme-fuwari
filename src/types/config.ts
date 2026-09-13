@@ -80,6 +80,7 @@ export interface Widget {
   play_mode?: string;
   volume?: number;
   api?: string;
+  show_lyrics?: boolean;
 }
 
 export interface Profile {

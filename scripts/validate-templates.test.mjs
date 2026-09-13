@@ -152,6 +152,39 @@ const cases = [
       ),
     expect: [],
   },
+
+  // Boundary cases for the th:case / th:switch ancestry rule. Each replaces the
+  // whole scratch directory with a single synthetic template.
+  {
+    name: "th:case as a direct child of its th:switch",
+    replaceAll: () =>
+      `<div th:switch="\${x}"><div th:case="'a'">A</div><div th:case="'b'">B</div></div>`,
+    expect: [],
+  },
+  {
+    name: "th:case nested deeply inside its th:switch",
+    replaceAll: () =>
+      `<div th:switch="\${x}"><section><article><p th:case="'a'">A</p></article></section></div>`,
+    expect: [],
+  },
+  {
+    name: "th:case in the second of two sibling switches",
+    replaceAll: () =>
+      `<div th:switch="\${x}"><div th:case="'a'">A</div></div><div th:switch="\${y}"><div th:case="'b'">B</div></div>`,
+    expect: [],
+  },
+  {
+    name: "th:case after the switch has closed",
+    replaceAll: () =>
+      `<div th:switch="\${x}"><div>A</div></div><div th:case="'a'">A</div>`,
+    expect: ["error", "th:case without an enclosing th:switch"],
+  },
+  {
+    name: "th:case belonging to an empty sibling switch",
+    replaceAll: () =>
+      `<div th:switch="\${x}"><div th:case="'a'">A</div></div><div th:switch="\${y}"></div><div th:case="'b'">B</div>`,
+    expect: ["error", "th:case without an enclosing th:switch"],
+  },
 ];
 
 let passed = 0;
@@ -160,7 +193,18 @@ const failures = [];
 for (const testCase of cases) {
   resetScratch();
   try {
-    testCase.mutate();
+    if (testCase.replaceAll) {
+      // Synthetic single-template scenarios: drop the real build output so the
+      // case is judged in isolation.
+      rmSync(SCRATCH, { recursive: true, force: true });
+      mkdirSync(SCRATCH, { recursive: true });
+      writeFileSync(
+        path.join(SCRATCH, "case.html"),
+        `<!doctype html><html><body>${testCase.replaceAll()}</body></html>`,
+      );
+    } else {
+      testCase.mutate();
+    }
   } catch (error) {
     failures.push(
       `${testCase.name}: could not inject defect - ${error.message}`,

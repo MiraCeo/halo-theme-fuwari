@@ -248,6 +248,12 @@ spec:
               max: 1
               step: 0.1
               value: 0.7
+            - $formkit: switch
+              if: $value.value === music
+              name: show_lyrics
+              label: 显示歌词按钮
+              value: true
+              help: "关闭后隐藏歌词按钮和歌词面板"
             - $formkit: url
               if: $value.value === music
               name: api
