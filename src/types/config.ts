@@ -4,6 +4,7 @@ export interface ThemeConfig {
   base: Base;
   style: Style;
   sidebar: Sidebar;
+  music?: Music;
   profile: Profile;
   post: Post;
   beian: Beian;
@@ -32,8 +33,35 @@ export interface Base {
   themeColor: ThemeColor;
   banner: Banner;
   menu: string;
-  /** Hides the top-bar music toggle when explicitly set to false. */
-  show_music_toggle?: boolean;
+}
+
+/**
+ * Site-wide music feature, configured in the 音乐 settings group.
+ *
+ * There is exactly one player per site: the sidebar panel and the top-bar
+ * button are views onto it, which is why none of this lives on a sidebar widget.
+ */
+export interface Music {
+  enable?: boolean;
+  title?: string;
+  /** JSON array of tracks; takes precedence over `meting` when both are set. */
+  custom_tracks?: string;
+  meting?: MusicMeting;
+  play_mode?: string;
+  volume?: number;
+  autoplay?: boolean;
+  show_lyrics?: boolean;
+  /** Show the play/pause button in the top bar. Missing means enabled. */
+  show_toggle?: boolean;
+  /** Render the player panel in the sidebar. Missing means enabled. */
+  show_sidebar?: boolean;
+}
+
+export interface MusicMeting {
+  api?: string;
+  server?: string;
+  type?: string;
+  id?: string;
 }
 
 export interface ThemeColor {
@@ -75,17 +103,6 @@ export interface Sidebar {
 export interface Widget {
   value: string;
   html?: string;
-  title?: string;
-  server?: string;
-  type?: string;
-  id?: string;
-  play_mode?: string;
-  volume?: number;
-  api?: string;
-  show_lyrics?: boolean;
-  autoplay?: boolean;
-  /** JSON array of tracks; takes precedence over `api` when both are set. */
-  custom_tracks?: string;
 }
 
 export interface Profile {

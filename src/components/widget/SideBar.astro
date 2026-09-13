@@ -30,12 +30,6 @@ const className = Astro.props.class;
         <div class="contents" th:case="'tag'">
           <Tags class="onload-animation" />
         </div>
-        <div class="contents" th:case="'music'">
-          <MusicPlayer
-            class="onload-animation"
-            th:style="|animation-delay: calc(var(--content-delay) + ${widgetStat.index * 50}ms)|"
-          />
-        </div>
         <div
           th:case="'html'"
           class="card-base onload-animation p-4"
@@ -43,6 +37,21 @@ const className = Astro.props.class;
         >
         </div>
       </div>
+    </div>
+
+    <!--
+      Music is a site-wide feature (see the 音乐 settings group), not a sidebar
+      widget, so it renders once here rather than from the widget list above.
+      It is rendered whenever music is enabled even if the sidebar panel is
+      hidden: the player is the single owner of the <audio> element, and the
+      top-bar button drives it through window.__fuwariMusic. The wrapper is what
+      hides the panel, so the player itself keeps running.
+    -->
+    <div
+      th:if="${theme.config.music != null and theme.config.music.enable}"
+      th:style="${theme.config.music.show_sidebar != null and theme.config.music.show_sidebar} ? null : 'display: none'"
+    >
+      <MusicPlayer class="onload-animation" title="音乐" />
     </div>
   </div>
 </aside>

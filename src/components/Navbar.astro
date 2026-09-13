@@ -5,6 +5,21 @@ import DisplaySettings from "./widget/DisplaySettings.svelte";
 import NavMenuPanel from "./widget/NavMenuPanel.astro";
 
 const className = Astro.props.class;
+
+/*
+ * Thymeleaf EL for "music is on and the top-bar button is wanted".
+ *
+ * Built here rather than inline so the multi-line expression never has to sit
+ * inside an attribute value, and kept to the constructs this theme already
+ * relies on: plain property access, `!= null`, `==` and `or`.
+ *
+ * `show_toggle == null` means the key has no saved value yet, which is treated
+ * as enabled - a wrong `false` would hide the button with no way to tell why.
+ */
+const musicToggleExpression =
+  "${theme.config.music != null " +
+  "and theme.config.music.enable " +
+  "and (theme.config.music.show_toggle == null or theme.config.music.show_toggle)}";
 ---
 
 <div id="navbar" class="z-50 onload-animation">
@@ -59,102 +74,95 @@ const className = Astro.props.class;
       {
         /* Thymeleaf, not Astro.
          *
-         * Note what is NOT here: `th:if`, `th:remove`, a `toList()` helper call,
-         * and a SpEL selection expression all appeared in an earlier version of
-         * this button. Because Halo renders templates server-side, an
-         * expression it cannot evaluate takes the whole page down instead of
-         * degrading.
+         * This button is a view onto the site-wide player defined by the 音乐
+         * settings group, so the server only decides whether music is on and
+         * whether the button is wanted. It ships hidden and the client reveals
+         * it once the player publishes window.__fuwariMusic.
          *
-         * Two hard rules learned from that outage:
+         * Note what is NOT here: `th:each`, `th:if`, `th:remove`, a `toList()`
+         * helper call, and a SpEL selection expression. All of them appeared in
+         * an earlier version; because Halo renders templates server-side, an
+         * expression it cannot evaluate takes the whole page down instead of
+         * degrading. The two hard rules from that outage:
          *   - never put `th:each` and `th:if` on the same element. Thymeleaf
          *     evaluates `th:each` first, so `th:if` sees the whole list rather
          *     than each item and never matches what the author meant.
          *   - never put `th:each` on an element carrying a literal `id`, which
          *     would be emitted once per iteration.
-         *
-         * So the iteration is plain: every iteration renders the same hidden
-         * button, and the client takes the first one, checks the setting and
-         * reveals it only once a player publishes itself. The nav-menu buttons
-         * below use the same plain-iteration pattern.
          */
       }
-      <div
-        class="contents"
-        th:if="${theme.config.sidebar != null and not #lists.isEmpty(theme.config.sidebar.widgets)}"
-      >
-        <div th:each="widget : ${theme.config.sidebar.widgets}">
-          <button
-            class="music-toggle-button btn-plain scale-animation hidden h-11 w-11 rounded-lg active:scale-90"
-            type="button"
-            aria-pressed="false"
-            th:aria-label="#{nav.musicPlay}"
-            th:title="#{nav.musicPlay}"
-          >
-            <span class="relative flex h-5 w-5 items-center justify-center">
-              <span
-                class="music-toggle-icon icon-[material-symbols--music-note-rounded] text-[1.25rem] transition-opacity duration-300"
-              ></span>
-              <span
-                class="music-toggle-playing icon-[material-symbols--graphic-eq-rounded] absolute animate-spin-slow text-[1.25rem] text-(--primary) opacity-0 transition-opacity duration-300"
-              ></span>
-            </span>
-          </button>
-        </div>
+      <div class="contents" th:if={musicToggleExpression}>
         <button
-          th:unless="${theme.config.base.themeColor.fixed}"
-          th:aria-label="#{nav.displaySettings}"
-          aria-label="Display Settings"
-          class="btn-plain scale-animation h-11 w-11 rounded-lg active:scale-90"
-          id="display-settings-switch"
+          class="music-toggle-button btn-plain scale-animation hidden h-11 w-11 rounded-lg active:scale-90"
           type="button"
+          aria-pressed="false"
+          th:aria-label="#{nav.musicPlay}"
+          th:title="#{nav.musicPlay}"
         >
-          <span class="icon-[material-symbols--palette-outline] text-[1.25rem]"
-          ></span>
-        </button>
-        <LightDarkSwitch client:only="svelte" />
-        <button
-          th:aria-label="#{nav.menu}"
-          th:name="#{nav.navMenu}"
-          aria-label="Menu"
-          name="Nav Menu"
-          class="btn-plain scale-animation h-11 w-11 rounded-lg active:scale-90 md:!hidden"
-          id="nav-menu-switch"
-          type="button"
-        >
-          <span class="icon-[material-symbols--menu-rounded] text-[1.25rem]"
-          ></span>
+          <span class="relative flex h-5 w-5 items-center justify-center">
+            <span
+              class="music-toggle-icon icon-[material-symbols--music-note-rounded] text-[1.25rem] transition-opacity duration-300"
+            ></span>
+            <span
+              class="music-toggle-playing icon-[material-symbols--graphic-eq-rounded] absolute animate-spin-slow text-[1.25rem] text-(--primary) opacity-0 transition-opacity duration-300"
+            ></span>
+          </span>
         </button>
       </div>
-
-      <NavMenuPanel />
-      <DisplaySettings client:only="svelte" />
+      <button
+        th:unless="${theme.config.base.themeColor.fixed}"
+        th:aria-label="#{nav.displaySettings}"
+        aria-label="Display Settings"
+        class="btn-plain scale-animation h-11 w-11 rounded-lg active:scale-90"
+        id="display-settings-switch"
+        type="button"
+      >
+        <span class="icon-[material-symbols--palette-outline] text-[1.25rem]"
+        ></span>
+      </button>
+      <LightDarkSwitch client:only="svelte" />
+      <button
+        th:aria-label="#{nav.menu}"
+        th:name="#{nav.navMenu}"
+        aria-label="Menu"
+        name="Nav Menu"
+        class="btn-plain scale-animation h-11 w-11 rounded-lg active:scale-90 md:!hidden"
+        id="nav-menu-switch"
+        type="button"
+      >
+        <span class="icon-[material-symbols--menu-rounded] text-[1.25rem]"
+        ></span>
+      </button>
     </div>
+
+    <NavMenuPanel />
+    <DisplaySettings client:only="svelte" />
   </div>
-
-  <script>
-    import { initMusicToggle } from "../utils/music-toggle";
-
-    function loadNavbarButtons() {
-      const settingBtn = document.getElementById("display-settings-switch");
-      settingBtn?.addEventListener("click", () => {
-        document
-          .getElementById("display-setting")
-          ?.classList.toggle("float-panel-closed");
-      });
-
-      const menuBtn = document.getElementById("nav-menu-switch");
-      menuBtn?.addEventListener("click", () => {
-        document
-          .getElementById("nav-menu-panel")
-          ?.classList.toggle("float-panel-closed");
-      });
-    }
-
-    loadNavbarButtons();
-    document.addEventListener("swup:contentReplaced", loadNavbarButtons);
-
-    // The navbar sits outside Swup's containers, so this runs once per hard load.
-    // `initMusicToggle` guards against a second binding anyway.
-    initMusicToggle();
-  </script>
 </div>
+
+<script>
+  import { initMusicToggle } from "../utils/music-toggle";
+
+  function loadNavbarButtons() {
+    const settingBtn = document.getElementById("display-settings-switch");
+    settingBtn?.addEventListener("click", () => {
+      document
+        .getElementById("display-setting")
+        ?.classList.toggle("float-panel-closed");
+    });
+
+    const menuBtn = document.getElementById("nav-menu-switch");
+    menuBtn?.addEventListener("click", () => {
+      document
+        .getElementById("nav-menu-panel")
+        ?.classList.toggle("float-panel-closed");
+    });
+  }
+
+  loadNavbarButtons();
+  document.addEventListener("swup:contentReplaced", loadNavbarButtons);
+
+  // The navbar sits outside Swup's containers, so this runs once per hard load.
+  // `initMusicToggle` guards against a second binding anyway.
+  initMusicToggle();
+</script>

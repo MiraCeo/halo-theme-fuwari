@@ -485,6 +485,13 @@ check(
       !markup.includes('th:remove="'),
       "th:remove has never been used in this theme",
     );
+    // A multi-line `th:if` inside Astro's <Fragment> fails to compile ("unterminated
+    // string constant"), so the EL lives in the frontmatter instead.
+    assert.ok(
+      !/<Fragment[\s\S]*?th:/.test(navbar),
+      "do not put Thymeleaf attributes on Astro's <Fragment>",
+    );
+
     // The two rules the outage taught us.
     for (const match of markup.matchAll(/<[a-zA-Z][^>]*>/g)) {
       const tag = match[0];
@@ -500,6 +507,97 @@ check(
     }
   },
 );
+
+// --- the music feature moved out of the sidebar widget list ---
+
+check("music is a site-wide feature, not a sidebar widget", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const sidebar = readFileSync(
+    path.join(root, "src/components/widget/SideBar.astro"),
+    "utf8",
+  );
+  const settings = readFileSync(path.join(root, "settings.yaml"), "utf8");
+
+  assert.ok(
+    !sidebar.includes("th:case=\"'music'\""),
+    "the music branch must be gone from the widget switch",
+  );
+  assert.ok(
+    sidebar.includes("theme.config.music.enable"),
+    "the sidebar must render the player from the feature config",
+  );
+  // Hiding the panel must not remove the player: it owns the <audio> element
+  // that the top-bar button drives.
+  assert.ok(
+    sidebar.includes("display: none"),
+    "show_sidebar must hide the wrapper, keeping the player alive",
+  );
+  assert.ok(
+    !/value: music\b/.test(settings),
+    "the widget picker must no longer offer a music option",
+  );
+  assert.ok(
+    /^\s{4}- group: music$/m.test(settings),
+    "settings must define a top-level 音乐 group",
+  );
+});
+
+check("player markup reads the feature config, not a widget variable", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const player = readFileSync(
+    path.join(root, "src/components/widget/MusicPlayer.astro"),
+    "utf8",
+  );
+  // The music settings used to hang off each sidebar widget. Catch any of those
+  // property paths creeping back in; i18n keys read `widget.music.*` and none of
+  // these patterns match them.
+  for (const oldPath of [
+    "widget.custom_tracks",
+    "widget.show_lyrics",
+    "widget.autoplay",
+    "widget.play_mode",
+    "widget.volume",
+    "widget.api",
+    "widget.server",
+    "widget.title",
+  ]) {
+    assert.ok(
+      !player.includes(oldPath),
+      `${oldPath} belongs to the 音乐 group now, not to a sidebar widget`,
+    );
+  }
+  assert.ok(
+    player.includes("theme.config.music.enable"),
+    "the player must be gated by the feature switch",
+  );
+  // One player per site, so the id can be fixed - which is also what lets the
+  // top-bar button and the sidebar panel share a single instance.
+  assert.ok(
+    player.includes('const widgetId = "music-widget"'),
+    "the player id must be deterministic",
+  );
+  assert.ok(
+    player.includes("id={widgetId}"),
+    "the player element must carry that id",
+  );
+});
+
+check("config types no longer expose music on a sidebar widget", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const types = readFileSync(path.join(root, "src/types/config.ts"), "utf8");
+  const widgetBlock = /export interface Widget \{[\s\S]*?\n\}/.exec(types);
+  assert.ok(widgetBlock, "Widget interface must still exist");
+  for (const gone of ["show_lyrics", "autoplay", "custom_tracks", "server"]) {
+    assert.ok(
+      !widgetBlock[0].includes(gone),
+      `${gone} must not remain on Widget`,
+    );
+  }
+  assert.ok(
+    /export interface Music \{[\s\S]*?\n\}/.test(types),
+    "a Music interface must exist for the feature settings",
+  );
+});
 
 check("MUSIC_PLAYER_SOURCE: guards against double binding", () => {
   assert.ok(
@@ -605,15 +703,19 @@ check(
   },
 );
 
-check("template markup: the widget hides itself when unconfigured", () => {
+check("template markup: the player is gated by the feature switch", () => {
   const root = path.resolve(import.meta.dirname, "..");
   const markup = readFileSync(
     path.join(root, "src/components/widget/MusicPlayer.astro"),
     "utf8",
   );
   assert.ok(
-    markup.includes("not #strings.isEmpty(widget.custom_tracks)"),
-    "an unconfigured widget must not render at all",
+    markup.includes("theme.config.music.enable"),
+    "the player must not render when music is switched off",
+  );
+  assert.ok(
+    markup.includes("not #strings.isEmpty(theme.config.music.custom_tracks)"),
+    "the JSON track list is emitted only when present",
   );
   assert.ok(
     !markup.includes("api.i-meto.com"),
@@ -628,7 +730,9 @@ check("template markup: lyrics are opt-in and follow the setting", () => {
     "utf8",
   );
   assert.ok(
-    markup.includes("widget.show_lyrics != null and widget.show_lyrics"),
+    markup.includes(
+      "theme.config.music.show_lyrics != null and theme.config.music.show_lyrics",
+    ),
     "lyrics must be opt-in: a missing key means off",
   );
   // The runtime rule must match, or the button would appear for people who left

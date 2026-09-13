@@ -69,16 +69,15 @@ function reveal(elements: ToggleElements): void {
 /**
  * Read the "show top-bar music button" setting.
  *
- * Missing means enabled: the key does not exist in configs created before it was
- * added, and Halo only fills defaults in at install time. Returning "enabled"
- * for an absent key is also the only safe default, since a wrong `false` hides
- * the button with no way to discover why.
+ * Missing means enabled: a config saved before this key existed has no value,
+ * and returning "enabled" for an absent key is the only safe default, since a
+ * wrong `false` hides the button with no way to discover why.
  */
 function settingDisabled(): boolean {
   const text = document.getElementById("theme-config")?.textContent;
   if (!text) return false;
   try {
-    return JSON.parse(text)?.base?.show_music_toggle === false;
+    return JSON.parse(text)?.music?.show_toggle === false;
   } catch {
     return false;
   }

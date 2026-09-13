@@ -78,36 +78,42 @@ The build output is a set of **Thymeleaf templates**, not static HTML. `astro.co
 
 ### Sidebar music widget
 
-The widget is split four ways so the logic is testable without a browser:
+Music is a **site-wide feature**, configured in the top-level `音乐` settings group
+(`theme.config.music.*`), not a sidebar widget. It used to be a `widgets` array value, which
+forced site-wide options like volume and autoplay to be duplicated per widget entry and buried
+inside the array's edit dialog.
 
-- `src/components/widget/MusicPlayer.astro` - markup and per-widget ids only
+The logic is split four ways so it is testable without a browser:
+
+- `src/components/widget/MusicPlayer.astro` - the player panel (`id="music-widget"`), markup only
 - `src/components/widget/PlaylistItem.astro` - the `<template>` row the script clones per track
 - `src/utils/music-player.ts` - `MUSIC_PLAYER_SOURCE` (the inline player) plus pure helpers
   (`formatTime`, `parseLRC`, `normalizeLyrics`, `parseCustomTracks`, `isLyricsUrl`,
   `buildMetingUrl`, `mapMetingTrack`)
 - `src/utils/music-toggle.ts` - the top-bar play/pause button
 
-**Sources.** A widget plays from one of two fields, and the custom list wins when both are set:
+**One player, two views.** The sidebar panel is the single owner of the `<audio>` element; the
+top-bar button drives it through `window.__fuwariMusic` (typed in `src/global.d.ts`).
+`SideBar.astro` renders the player whenever music is enabled and hides the _wrapper_ when
+`show_sidebar` is off - it must not remove the player, or the top-bar button would have nothing to
+control. Both surfaces being needed is not redundancy: `Layout.astro` applies `navbar-hidden`
+(`-translate-y-16 opacity-0`) once the page scrolls past ~234px with a banner enabled, so the
+top-bar button is gone for the whole of a long article.
+
+**Sources.** A player plays from one of two fields, and the custom list wins when both are set:
 
 - `custom_tracks` (recommended) - a JSON array of `{name, artist, url, pic, lrc}`. Audio and covers
   live in Halo attachments, so there is no third-party dependency. `lrc` accepts a string or an
   array of per-line strings.
-- `api` - a Meting server URL. There is deliberately **no built-in default**: the previous default
-  mirror died and broke every install that relied on it. `settings.yaml` documents the mirror
-  situation in the field help.
-
-A widget with neither field set does not render at all, which keeps the "not configured" case
-distinct from the "configured but the mirror is down" case.
+- `meting.api` - a Meting server URL. There is deliberately **no built-in default**: the previous
+  default mirror died and broke every install that relied on it.
 
 **Custom tracks travel as JSON inside a `script[type=application/json]` element**, not in a data
 attribute: JSON is full of quotes and HTML-escaping it into an attribute is the fragile path.
 Thymeleaf injects it with `th:utext` and the player reads `textContent`.
 
-**The top-bar button and the player are separate components** that rendezvous through
-`window.__fuwariMusic` (typed in `src/global.d.ts`). Whichever loads first creates the object;
-`set` stays `null` until the playlist is ready, so the button can never drive a player that does
-not exist. The icon follows `play`/`pause` events rather than the click, so a blocked autoplay
-leaves it paused instead of spinning misleadingly.
+**Missing means enabled** for `show_toggle` and `show_sidebar`: a config saved before those keys
+existed has no value, and a wrong `false` hides a surface with no way to tell why.
 
 The script still has to run inline: the sidebar sits **outside** Swup's replaced containers, so the
 widget is never re-rendered and must bind on first parse. Two constraints follow:
@@ -126,7 +132,7 @@ widget is never re-rendered and must bind on first parse. Two constraints follow
 
 - `astro.config.mjs` - Astro config with integrations
 - `theme.yaml` - Halo theme metadata (`requires: ">=2.25.0"`, version must be bumped here for releases)
-- `settings.yaml` - Halo theme settings schema (`theme-fuwari-miraceo-setting`), groups: base / style / sidebar / profile / post / beian
+- `settings.yaml` - Halo theme settings schema (`theme-fuwari-miraceo-setting`), groups: base / style / sidebar / music / profile / post / beian
 - `ui-plugin/ui-plugin.yaml` - UI plugin metadata (name, version, `requires` - keep in sync with `theme.yaml`)
 - `i18n/` - `default.properties`, `zh_CN.properties`, `zh_TW.properties`
 - `nodemon.json` - Watches `src/**/*` and `public/**/*` for dev rebuilds
@@ -181,10 +187,13 @@ widget is never re-rendered and must bind on first parse. Two constraints follow
   (`#8066F0` -> `#7F66F0`). This predates the shared-module refactor; `tests/theme-color.test.mts`
   pins the current behaviour rather than pretending it is exact
 - `prettier` has no Svelte plugin configured, so `.svelte` files are not covered by `pnpm format`
-- The music widget's correctness depends on `#sidebar` staying **outside** Swup's `main` /
+- The music player's correctness depends on `#sidebar` staying **outside** Swup's `main` /
   `#toc-container`. Moving it inside would make Swup replace it on every navigation, and the new
-  element would never be bound because the per-page `widgetId` differs. If the sidebar ever moves,
-  the widget needs rebinding on `swup` `page:view` instead of a parse-time binding.
+  element would never be bound because it binds once at parse time. If the sidebar ever moves, the
+  player needs rebinding on `swup` `page:view`.
+- Never put a Thymeleaf attribute on Astro's `<Fragment>`. A multi-line `th:if` there fails the
+  build with "unterminated string constant" pointing at an unrelated line. Use
+  `<div class="contents">` when a wrapper is needed, and lift long EL into a frontmatter constant.
 - `MUSIC_PLAYER_SOURCE` sets `audio.crossOrigin = "anonymous"`, which nothing in the widget needs.
   It is harmless for same-origin Halo attachments and for Meting mirrors that send
   `Access-Control-Allow-Origin` (verified against a working public mirror). If playback ever

@@ -45,12 +45,6 @@ spec:
               value: false
               help: "隐藏访问者的主题彩色选择器"
 
-        - $formkit: switch
-          name: show_music_toggle
-          label: 显示顶栏音乐按钮
-          value: true
-          help: "在导航栏右上角显示播放/暂停按钮，仅在已配置音乐控件时出现。首次访问的访客无法自动播放，需要通过这个按钮开始播放"
-
         - $formkit: group
           name: banner
           label: Banner
@@ -187,17 +181,55 @@ spec:
                   value: categories
                 - label: 文章标签
                   value: tag
-                - label: 音乐播放器
-                  value: music
                 - label: 自定义HTML
                   value: html
+            - $formkit: code
+              if: $value.value === html
+              name: html
+              label: HTML
+              value: "<p>自定义HTML</p>"
+              language: html
+
+    - group: music
+      label: 音乐
+      formSchema:
+        - $formkit: switch
+          name: enable
+          label: 启用音乐
+          value: false
+          help: "关闭后本站不再加载任何音乐功能"
+
+        - $formkit: text
+          name: title
+          label: 标题
+          value: 音乐
+          help: "侧边栏播放器的标题"
+
+        - $formkit: code
+          name: custom_tracks
+          label: 自定义曲目列表（推荐）
+          language: json
+          help: |-
+            音频和封面先上传到 Halo 附件，再把附件地址填进来。与 Meting API 同时填写时以此为准。
+            格式为 JSON 数组，每条含 name、artist、url、pic、lrc，其中只有 url 必填。
+            lrc 为字符串数组，行首带 [分:秒.百分秒] 时歌词跟随播放高亮。
+
+        - $formkit: group
+          name: meting
+          label: Meting API
+          value:
+            server: netease
+            type: playlist
+          children:
             - $formkit: text
-              if: $value.value === music
-              name: title
-              label: 标题
-              value: 音乐
+              name: api
+              label: 接口地址
+              placeholder: "https://你的域名/meting/?server=:server&type=:type&id=:id"
+              help: |-
+                不使用 Meting 时留空。
+                Meting 是统一各音乐平台接口的开源项目，需自行部署成服务，公开镜像即他人部署的此类服务。
+                公开镜像随时可能失效，且播放内容属于未授权分发，风险自负。
             - $formkit: select
-              if: $value.value === music
               name: server
               label: 平台
               value: netease
@@ -213,7 +245,6 @@ spec:
                 - label: 百度音乐
                   value: baidu
             - $formkit: select
-              if: $value.value === music
               name: type
               label: 类型
               value: playlist
@@ -229,80 +260,54 @@ spec:
                 - label: 搜索
                   value: search
             - $formkit: text
-              if: $value.value === music
               name: id
               label: ID
-              validation: required
               help: 歌曲 / 歌单 / 专辑 / 歌手 ID，搜索类型时填写关键词
-            - $formkit: select
-              if: $value.value === music
-              name: play_mode
-              label: 播放模式
+
+        - $formkit: select
+          name: play_mode
+          label: 播放模式
+          value: list
+          options:
+            - label: 列表循环
               value: list
-              options:
-                - label: 列表循环
-                  value: list
-                - label: 单曲循环
-                  value: one
-                - label: 随机
-                  value: random
-            - $formkit: number
-              if: $value.value === music
-              name: volume
-              label: 默认音量
-              min: 0
-              max: 1
-              step: 0.1
-              value: 0.7
-            - $formkit: switch
-              if: $value.value === music
-              name: show_lyrics
-              label: 歌词
-              value: false
-              help: "开启后显示歌词按钮和歌词面板。曲目没有填写歌词时该按钮始终隐藏"
-            - $formkit: switch
-              if: $value.value === music
-              name: autoplay
-              label: 自动播放
-              value: false
-              help: "开启后尝试自动播放。浏览器通常只允许有过交互的访客自动播放，首次访问时仍需要点击顶栏的音乐按钮"
-            - $formkit: text
-              if: $value.value === music
-              name: api
-              label: 自定义 Meting API
-              placeholder: "https://example.com/meting/?server=:server&type=:type&id=:id"
-              help: |-
-                以下两种音源任选其一，留空表示不使用该音源。
+            - label: 单曲循环
+              value: one
+            - label: 随机
+              value: random
 
-                【Meting API】Meting 是把网易云、QQ 音乐等平台接口统一起来的开源项目，它本身只是软件，需要有人部署成服务，这类公开服务称为"镜像"。公开镜像随时可能失效（本主题原先内置的默认镜像已经停止服务），且通过它们播放的音乐属于未授权分发，请自行判断风险。
-                推荐做法：把音频上传到 Halo 附件，改用下面的"自定义曲目列表"。
+        - $formkit: number
+          name: volume
+          label: 默认音量
+          min: 0
+          max: 1
+          step: 0.1
+          value: 0.7
+          help: "0 到 1 之间，0.7 即 70%"
 
-                地址可包含 :server、:type、:id、:r 占位符。自建服务时通常为 https://你的域名/meting/?server=:server&type=:type&id=:id
-            - $formkit: code
-              if: $value.value === music
-              name: custom_tracks
-              label: 自定义曲目列表（推荐）
-              language: json
-              help: |-
-                填写 JSON 数组即可播放自己的音频，音频和封面请先上传到 Halo 附件，然后填写附件地址。与上面同时填写时，优先使用本列表。
+        - $formkit: switch
+          name: autoplay
+          label: 自动播放
+          value: false
+          help: "多数浏览器只允许有过交互的访客自动播放，首次访问通常仍需点击播放按钮"
 
-                [
-                  {
-                    "name": "曲名",
-                    "artist": "艺术家",
-                    "url": "/upload/song.mp3",
-                    "pic": "/upload/cover.jpg",
-                    "lrc": ["[00:12.50]第一行歌词", "[00:16.00]第二行歌词"]
-                  }
-                ]
+        - $formkit: switch
+          name: show_lyrics
+          label: 歌词
+          value: false
+          help: "显示歌词按钮。曲目没填歌词时按钮自动隐藏"
 
-                lrc 可省略；写成字符串数组即可，一行一句，带 [分:秒.百分秒] 前缀时歌词会跟随播放高亮，不带前缀则整段静态显示。
-            - $formkit: code
-              if: $value.value === html
-              name: html
-              label: HTML
-              value: "<p>自定义HTML</p>"
-              language: html
+        - $formkit: switch
+          name: show_toggle
+          label: 显示顶栏按钮
+          value: true
+          help: "滚动后顶栏会隐藏，长文阅读时请保留侧边栏播放器"
+
+        - $formkit: switch
+          name: show_sidebar
+          label: 添加到侧边栏
+          value: true
+          help: "关闭后播放器仍在运行，只是不在侧边栏显示，顶栏按钮仍可使用"
 
     - group: profile
       label: 个人设置
