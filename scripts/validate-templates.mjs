@@ -77,6 +77,7 @@ const KNOWN_TH_ATTRIBUTES = new Set([
   "placeholder",
   "readonly",
   "rel",
+  "remove",
   "role",
   "selected",
   "src",
@@ -510,6 +511,49 @@ function checkThCase(report, file, html, tags) {
   }
 }
 
+/**
+ * `th:each` composes badly with the other structural processors, so these two
+ * combinations are rejected. Both took a page down in production:
+ *
+ *   - `th:each` + `th:if` on one element: `th:each` is evaluated first, so
+ *     `th:if` sees the whole list rather than the current item.
+ *   - `th:each` + a literal `id`: the id is emitted once per iteration.
+ *
+ * `th:if` combined with `th:with` is deliberately allowed: this theme already
+ * relies on it in several templates that render correctly in production.
+ */
+const EACH_INCOMPATIBLE = new Set(["if", "unless", "remove"]);
+
+function checkStructuralProcessors(report, file, html, tags) {
+  for (const tag of tags) {
+    const hasEach = tag.attributes.some(
+      (attribute) => attribute.name === "th:each",
+    );
+    if (!hasEach) continue;
+
+    for (const attribute of tag.attributes) {
+      if (EACH_INCOMPATIBLE.has(attribute.name.slice(3))) {
+        report.error(
+          file,
+          lineOf(html, tag.index),
+          `<${tag.name}> combines th:each with ${attribute.name}; th:each is evaluated first, so the condition sees the whole list. Use a nested element`,
+        );
+      }
+    }
+
+    const idAttribute = tag.attributes.find(
+      (attribute) => attribute.name.toLowerCase() === "id",
+    );
+    if (idAttribute) {
+      report.error(
+        file,
+        lineOf(html, tag.index),
+        `<${tag.name}> has both th:each and id="${idAttribute.value}"; the id would be emitted once per item`,
+      );
+    }
+  }
+}
+
 function checkAstroLeaks(report, file, html, markup) {
   for (const { pattern, label } of ASTRO_LEAKS) {
     const match = pattern.exec(markup);
@@ -582,6 +626,7 @@ export function validateTemplates(templatesDir, settingsFile) {
     checkConfigPaths(report, entry, html, configMask, schemaPaths);
     checkInlineExpressions(report, entry, html, markup, textRegions);
     checkThCase(report, entry, html, tags);
+    checkStructuralProcessors(report, entry, html, tags);
     checkAstroLeaks(report, entry, html, markup);
 
     for (const tag of tags) {

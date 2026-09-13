@@ -32,6 +32,8 @@ export interface Base {
   themeColor: ThemeColor;
   banner: Banner;
   menu: string;
+  /** Hides the top-bar music toggle when explicitly set to false. */
+  show_music_toggle?: boolean;
 }
 
 export interface ThemeColor {

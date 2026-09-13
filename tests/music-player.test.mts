@@ -399,13 +399,16 @@ check("music-toggle: reads the knob the player publishes", () => {
     "click must drive the shared knob",
   );
   assert.ok(
-    toggle.includes("window.__fuwariMusic?.subscribe"),
+    toggle.includes("knob.subscribe("),
     "icon must follow real playback state, not the click",
   );
   assert.ok(
-    !toggle.includes('aria-pressed", "true")') ||
-      toggle.includes("renderState"),
-    "state rendering must go through one place",
+    toggle.includes("reveal(elements)"),
+    "the button must be revealed only once a player exists",
+  );
+  assert.ok(
+    toggle.includes("settingDisabled()"),
+    "the show_music_toggle setting must be honoured on the client",
   );
 });
 
@@ -422,15 +425,25 @@ check("music-toggle: the knob name matches between toggle and player", () => {
   );
 });
 
-check("music-toggle: the button element id matches the navbar markup", () => {
+check("music-toggle: selector and markup hooks agree", () => {
   const root = path.resolve(import.meta.dirname, "..");
   const navbar = readFileSync(
     path.join(root, "src/components/Navbar.astro"),
     "utf8",
   );
+  const toggle = readFileSync(
+    path.join(root, "src/utils/music-toggle.ts"),
+    "utf8",
+  );
+  // A class selector, not an id: the button is rendered once per sidebar widget
+  // because `th:each` and `th:if` must not share an element.
   assert.ok(
-    navbar.includes('id="music-toggle"'),
-    "Navbar must render the id the toggle looks up",
+    toggle.includes('querySelector<HTMLElement>(".music-toggle-button")'),
+    "toggle must look the button up by class",
+  );
+  assert.ok(
+    navbar.includes('class="music-toggle-button'),
+    "Navbar must render that class",
   );
   assert.ok(
     navbar.includes("music-toggle-icon") &&
@@ -438,10 +451,55 @@ check("music-toggle: the button element id matches the navbar markup", () => {
     "both icon hooks must exist in the markup",
   );
   assert.ok(
-    navbar.includes("show_music_toggle"),
-    "the toggle must be gated by the setting",
+    navbar.includes("hidden h-11 w-11"),
+    "the button must ship hidden so it cannot appear without a player",
   );
 });
+
+check(
+  "navbar: the music button avoids the constructs that broke the site",
+  () => {
+    const root = path.resolve(import.meta.dirname, "..");
+    const navbar = readFileSync(
+      path.join(root, "src/components/Navbar.astro"),
+      "utf8",
+    );
+    // The explanatory comment in this file names the forbidden constructs, so
+    // strip comments before scanning or the explanation trips its own check.
+    const markup = navbar
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+      .replace(/<!--[\s\S]*?-->/g, "");
+
+    // All of these were in the version that produced a blank page in production.
+    // Halo renders templates server-side, so an expression it cannot evaluate
+    // takes the whole page down rather than degrading.
+    assert.ok(
+      !markup.includes("#lists.toList"),
+      "#lists.toList is not available in this dialect",
+    );
+    assert.ok(
+      !markup.includes("?["),
+      "SpEL selection expressions are not proven to work here",
+    );
+    assert.ok(
+      !markup.includes('th:remove="'),
+      "th:remove has never been used in this theme",
+    );
+    // The two rules the outage taught us.
+    for (const match of markup.matchAll(/<[a-zA-Z][^>]*>/g)) {
+      const tag = match[0];
+      if (!/\bth:each=/.test(tag)) continue;
+      assert.ok(
+        !/\bth:(?:if|unless|remove)=/.test(tag),
+        `th:each must not share an element with th:if/unless/remove: ${tag.replace(/\s+/g, " ")}`,
+      );
+      assert.ok(
+        !/\sid="/.test(tag),
+        `th:each must not share an element with a literal id: ${tag.replace(/\s+/g, " ")}`,
+      );
+    }
+  },
+);
 
 check("MUSIC_PLAYER_SOURCE: guards against double binding", () => {
   assert.ok(

@@ -185,6 +185,51 @@ const cases = [
       `<div th:switch="\${x}"><div th:case="'a'">A</div></div><div th:switch="\${y}"></div><div th:case="'b'">B</div>`,
     expect: ["error", "th:case without an enclosing th:switch"],
   },
+
+  // Structural-processor mistakes. A combined th:each + th:if took the whole
+  // site down once, because Thymeleaf evaluates them in a fixed order rather
+  // than the order they are written.
+  {
+    name: "th:each and th:if on one element",
+    replaceAll: () =>
+      `<div th:each="item : \${items}" th:if="\${item.value == 'x'}">A</div>`,
+    expect: ["error", "combines th:each with th:if"],
+  },
+  {
+    name: "th:each and th:unless on one element",
+    replaceAll: () =>
+      `<div th:each="item : \${items}" th:unless="\${item.value == 'x'}">A</div>`,
+    expect: ["error", "combines th:each with th:unless"],
+  },
+  {
+    name: "th:each and th:remove on one element",
+    replaceAll: () =>
+      `<div th:each="item : \${items}" th:remove="\${item.value == 'x' ? 'none' : 'all'}">A</div>`,
+    expect: ["error", "combines th:each with th:remove"],
+  },
+  {
+    name: "th:each on an element carrying a literal id",
+    replaceAll: () =>
+      `<button th:each="item : \${items}" id="fixed">A</button>`,
+    expect: ["error", "would be emitted once per item"],
+  },
+  {
+    name: "structural processors on separate elements are fine",
+    replaceAll: () =>
+      `<div th:each="item : \${items}"><button th:if="\${item.value == 'x'}">A</button></div>`,
+    expect: [],
+  },
+  {
+    name: "th:each with th:with is allowed (used by this theme already)",
+    replaceAll: () =>
+      `<a th:each="item : \${items}" th:with="label=\${item.name}">A</a>`,
+    expect: [],
+  },
+  {
+    name: "th:each without an id is fine",
+    replaceAll: () => `<div th:each="item : \${items}">A</div>`,
+    expect: [],
+  },
 ];
 
 let passed = 0;
